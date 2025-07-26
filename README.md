@@ -11,9 +11,9 @@ npm run dev
 
 # Connect
 
-curl -X POST http://localhost:3000/session -H "Content-Type: application/json" -d '{ "type": "odoo", "credentials": { "url": "https://localflow.odoo.com", "db": "localflow", "username": "xxx", "password": "xxx" } }'
+curl -X POST http://localhost:3000/session -H "Content-Type: application/json" -d '{ "type": "odoo", "credentials": { "url": "https://xxx", "db": "localflow", "username": "xxx", "password": "xxx" } }'
 
-curl -X POST http://localhost:3000/session -H "Content-Type: application/json" -d '{ "type": "salesforce", "credentials": { "loginUrl": "https://orgfarm-af32e100d8-dev-ed.develop.my.salesforce.com", "username": "xxx", "key": "xxx", "secret": "xxx" } }'
+curl -X POST http://localhost:3000/session -H "Content-Type: application/json" -d '{ "type": "salesforce", "credentials": { "loginUrl": "https://xxx", "username": "xxx", "key": "xxx", "secret": "xxx" } }'
 
 curl http://localhost:3000/metadata -H "Authorization: Bearer 1234567890"
 
