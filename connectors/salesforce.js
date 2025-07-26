@@ -5,9 +5,34 @@ export class SalesforceConnector {
     this.conn = null;
   }
 
-  async login({ username, password, token, loginUrl }) {
-    this.conn = new jsforce.Connection({ loginUrl: loginUrl || 'https://login.salesforce.com' });
-    await this.conn.login(username, password + (token || ''));
+  async login({ username, password, token, loginUrl, clientId, clientSecret, refreshToken }) {
+    if (username && password) {
+      // Username/password login
+      this.conn = new jsforce.Connection({
+        loginUrl: loginUrl || 'https://login.salesforce.com',
+      });
+      await this.conn.login(username, password + (token || ''));
+    } else if (clientId && clientSecret && refreshToken) {
+      // OAuth2 login using refresh token
+      const oauth2 = new jsforce.OAuth2({
+        loginUrl: loginUrl || 'https://login.salesforce.com',
+        clientId,
+        clientSecret,
+      });
+
+      this.conn = new jsforce.Connection({ oauth2 });
+      this.conn.refreshToken = refreshToken;
+
+      // Refresh and initialize the access token
+      await new Promise((resolve, reject) => {
+        this.conn.refreshAccessToken((err, res) => {
+          if (err) return reject(err);
+          resolve(res);
+        }); 
+      });
+    } else {
+      throw new Error('Missing required Salesforce credentials: either username/password or clientId/clientSecret/refreshToken');
+    }
   }
 
   async listObjectTypes() {
@@ -42,22 +67,17 @@ export class SalesforceConnector {
     const soql = `SELECT ${queryFields} FROM ${objectType} ${directionClause} ${limit ? `LIMIT ${limit}` : ''}`;
     const records = [];
     return new Promise((resolve, reject) => {
-      this.conn.query(soql)
+      const query = this.conn.query(soql)
         .on('record', (record) => {
           records.push(record);
         })
         .on('end', () => {
           console.log(`[daquota maps] total in database: ${query.totalSize}`);
           console.log(`[daquota maps] total fetched: ${query.totalFetched}`);
-          ide.monitor('DOWNLOAD', 'SALESFORCE', records);
           resolve(records);
         })
         .on('error', (err) => {
-          console.error('[daquota maps] error reading ' + this.objectType(), err);
-          $c('globals').setFieldData('errorMessage',
-            ($d('globals').errorMessage ? $d('globals').errorMessage + '<br/><br/>' : '') +
-            `Error reading object '${this.objectType()}'. Please review the map configuration.<br/>${err}`
-          );
+          console.error('[daquota maps] error reading ' + this.objectType, err);
           reject(err);
         })
         .run({ autoFetch: true, maxFetch: limit || 2000 }); // fetch more than 2000 records
