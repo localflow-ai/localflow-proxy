@@ -5,7 +5,8 @@ export class SalesforceConnector {
     this.conn = null;
   }
 
-  async login({ username, password, token, loginUrl, clientId, clientSecret, refreshToken }) {
+  async login({ username, password, token, loginUrl, clientId, clientSecret, refreshToken, signedRequest }) {
+    this.sessionInfo = { username, loginUrl, clientId, signedRequest };
     if (username && password) {
       // Username/password login
       this.conn = new jsforce.Connection({
@@ -33,6 +34,10 @@ export class SalesforceConnector {
     } else {
       throw new Error('Missing required Salesforce credentials: either username/password or clientId/clientSecret/refreshToken');
     }
+  }
+
+  async getSessionInfo() {
+    return this.sessionInfo;
   }
 
   async listObjectTypes() {

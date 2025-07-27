@@ -2,9 +2,9 @@ import crypto from 'crypto';
 
 const sessions = new Map();
 
-export function createSession(type, connector, credentials) {
+export function createSession(type, connector) {
     const token = crypto.randomUUID();
-    sessions.set(token, { type, connector, credentials });
+    sessions.set(token, { type, connector });
     return token;
 }
 

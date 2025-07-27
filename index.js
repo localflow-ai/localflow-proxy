@@ -18,19 +18,30 @@ const connectorMap = {
 };
 
 app.post('/session', async (req, res) => {
-    const { type, credentials } = req.body;
+    const { type, config } = req.body;
+    console.log('[daquota proxy] create new session', type, config);
     const ConnectorClass = connectorMap[type?.toLowerCase()];
-    if (!ConnectorClass) return res.status(400).json({ error: 'Unsupported connector type' });
+    if (!ConnectorClass) return res.status(400).json({ error: 'Unsupported connector type', details: 'Valid connector types are: salesforce, odoo' });
 
     try {
         const connector = new ConnectorClass();
-        await connector.login(credentials);
+        await connector.login(config);
 
         const token = createSession(type, connector);
         res.json({ token });
     } catch (err) {
         res.status(401).json({ error: 'Authentication failed', detail: err.message });
     }
+});
+
+app.get('/session', async (req, res) => {
+    const token = req.query.token;
+    if (!token) return res.status(400).json({ error: 'Missing token' });
+
+    const session = getSession(token, req).getSessionInfo();
+    if (!session) return res.status(403).json({ error: 'Session expired or invalid' });
+
+    res.json(session);
 });
 
 app.use((req, res, next) => {
