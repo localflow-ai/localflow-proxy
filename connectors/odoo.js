@@ -24,7 +24,7 @@ export class OdooConnector {
     console.log('listObjectTypes2');
     const inParams = [
       [],
-      ['model', 'name'],
+      ['model', 'name', 'transient', 'state'],
     ];
     const models = await new Promise((resolve, reject) => {
       this.odoo.execute_kw('ir.model', 'search_read', [inParams], (err, result) => {
@@ -33,62 +33,75 @@ export class OdooConnector {
       });
     });
 
-    return models.map(m => ({
-      name: m.model, // technical name
-      label: m.name,
-      labelPlural: m.name + 's',
-      keyPrefix: '',     // Odoo doesn't use this — placeholder
-      custom: false      // Placeholder — customize if needed
-    }));
+    return models.map(m => {
+      const objectType = m.model;
+      const layoutable = (
+        !m.transient &&
+        m.state === 'base' &&
+        !objectType.startsWith('ir.') &&
+        !objectType.startsWith('base.') &&
+        !objectType.startsWith('web.') &&
+        !objectType.includes('.test')
+      );
+      return {
+        name: m.model, // technical name
+        label: m.name,
+        labelPlural: m.name + 's',
+        keyPrefix: '',     // Odoo doesn't use this — placeholder
+        custom: false,      // Placeholder — customize if needed
+        layoutable
+      };
+    });
   }
 
-async getObjectMetadata(objectType) {
-  // Get fields
-  const fieldParams = [[['model', '=', objectType]]];
-  const fields = await new Promise((resolve, reject) => {
-    this.odoo.execute_kw('ir.model.fields', 'search_read', [fieldParams], (err, result) => {
-      if (err) return reject(err);
-      resolve(result);
+  async getObjectMetadata(objectType) {
+    // Get fields
+    const fieldParams = [[['model', '=', objectType]]];
+    const fields = await new Promise((resolve, reject) => {
+      this.odoo.execute_kw('ir.model.fields', 'search_read', [fieldParams], (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      });
     });
-  });
 
-  // Get model info (like abstract, transient, etc.)
-  const modelParams = [[['model', '=', objectType]]];
-  const [modelInfo] = await new Promise((resolve, reject) => {
-    this.odoo.execute_kw('ir.model', 'search_read', [modelParams], (err, result) => {
-      if (err) return reject(err);
-      resolve(result);
+    // Get model info (like abstract, transient, etc.)
+    const modelParams = [[['model', '=', objectType]]];
+    const [modelInfo] = await new Promise((resolve, reject) => {
+      this.odoo.execute_kw('ir.model', 'search_read', [modelParams], (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      });
     });
-  });
 
-  // Infer layoutability using heuristics
-  const layoutable = (
-    modelInfo &&
-    !modelInfo.transient &&
-    !modelInfo.abstract &&
-    modelInfo.state === 'base' &&
-    !objectType.startsWith('ir.') &&
-    !objectType.startsWith('base.') &&
-    !objectType.startsWith('web.') &&
-    !objectType.includes('.test')
-  );
+    // Infer layoutability using heuristics
+    const layoutable = (
+      modelInfo &&
+      !modelInfo.transient &&
+      !modelInfo.abstract &&
+      modelInfo.state === 'base' &&
+      !objectType.startsWith('ir.') &&
+      !objectType.startsWith('base.') &&
+      !objectType.startsWith('web.') &&
+      !objectType.includes('.test')
+    );
 
-  return {
-    ...modelInfo,
-    name: objectType,
-    layoutable,
-    fields: fields.map(field => ({
-      ...field,
-      name: field.name,
-      label: field.field_description,
-      type: this.normalizeOdooType(field.ttype),
-      required: field.required,
-      length: field.size || 255,
-      updatable: this.isFieldWritable(field),
-      referenceTo: field.relation ? [field.relation] : undefined
-    }))
-  };
-}
+    return {
+      ...modelInfo,
+      name: objectType,
+      layoutable,
+      fields: fields.map(field => ({
+        ...field,
+        name: field.name,
+        relationshipName: field.name,
+        label: field.field_description,
+        type: this.normalizeOdooType(field.ttype),
+        required: field.required,
+        length: field.size || 255,
+        updatable: this.isFieldWritable(field),
+        referenceTo: field.relation ? [field.relation] : undefined
+      }))
+    };
+  }
   // Basic mapping from Odoo types to Salesforce-like types
   normalizeOdooType(ttype) {
     switch (ttype) {
@@ -112,21 +125,162 @@ async getObjectMetadata(objectType) {
       !['id', 'create_uid', 'create_date', 'write_uid', 'write_date'].includes(field.name);
   }
 
-  async getData(objectType, { fields, limit, order } = {}) {
-    const orderString = order ? (`create_date ${order.toUpperCase() === 'ASC' ? 'asc' : 'desc'}`) : undefined;
-    const inParams = [[], fields, 0, limit || 2000, orderString];
+  // buildOdooDomain(where) {
+  //   if (!where || typeof where !== 'object') return [];
+
+  //   const domain = [];
+
+  //   for (const key in where) {
+  //     const value = where[key];
+
+  //     if (key === '$or' && Array.isArray(value)) {
+  //       domain.push('|'); // Odoo uses prefix notation for OR
+  //       const parts = value.map(buildOdooDomain).flat();
+  //       // Odoo OR only supports two elements at a time:
+  //       for (let i = 0; i < parts.length - 1; i++) {
+  //         domain.unshift('|');
+  //       }
+  //       domain.push(...parts);
+  //     } else if (key === '$not') {
+  //       const negated = buildOdooDomain(value);
+  //       for (const cond of negated) {
+  //         domain.push(['!', cond]);
+  //       }
+  //     } else if (typeof value === 'object' && value !== null) {
+  //       const [operator, operand] = Object.entries(value)[0];
+  //       switch (operator) {
+  //         case '$like':
+  //           domain.push([key, 'ilike', operand.replace(/%/g, '')]);
+  //           break;
+  //         case '$neq':
+  //           domain.push([key, '!=', operand]);
+  //           break;
+  //         case '$gt':
+  //           domain.push([key, '>', operand]);
+  //           break;
+  //         case '$lt':
+  //           domain.push([key, '<', operand]);
+  //           break;
+  //         default:
+  //           throw new Error(`Unsupported operator: ${operator}`);
+  //       }
+  //     } else {
+  //       domain.push([key, '=', value]);
+  //     }
+  //   }
+
+  //   return domain;
+  // }
+
+  async buildOdooDomain(where) {
+    if (!where || typeof where !== 'object') return [];
+
+    const domain = [];
+
+    for (const key in where) {
+      const value = where[key];
+
+      if (key === '$or' && Array.isArray(value)) {
+        // Flatten and prefix with |
+        const parts = (await Promise.all(value.map(v => this.buildOdooDomain(v)))).flat();
+        for (let i = 1; i < parts.length; i++) domain.unshift('|');
+        domain.push(...parts);
+      } else if (key === '$not') {
+        const negated = await this.buildOdooDomain(value);
+        for (const cond of negated) {
+          domain.push(['!', cond]);
+        }
+      } else if (typeof value === 'object' && value !== null) {
+        const [operator, operand] = Object.entries(value)[0];
+
+        switch (operator) {
+          case '$like':
+            domain.push([key, 'ilike', operand.replace(/%/g, '')]);
+            break;
+          case '$neq':
+            domain.push([key, '!=', operand === null ? false : operand]);
+            break;
+          case '$gt':
+            domain.push([key, '>', operand]);
+            break;
+          case '$lt':
+            domain.push([key, '<', operand]);
+            break;
+          case '$in':
+            if (Array.isArray(operand)) {
+              domain.push([key, 'in', operand]);
+            } else if (operand?.$select) {
+              const { model, field, where: subWhere } = operand.$select;
+              const subDomain = await this.buildOdooDomain(subWhere);
+              const ids = await new Promise((resolve, reject) => {
+                this.odoo.execute_kw(model, 'search_read', [subDomain, [field]], (err, result) => {
+                  if (err) return reject(err);
+                  resolve(result.map(r => r[field]));
+                });
+              });
+              domain.push([key, 'in', ids]);
+            } else {
+              throw new Error(`Unsupported $in operand: ${JSON.stringify(operand)}`);
+            }
+            break;
+          default:
+            throw new Error(`Unsupported operator: ${operator}`);
+        }
+      } else if (value === null) {
+        // Odoo domain for null is [('field', '=', false)]
+        domain.push([key, '=', false]);
+      } else {
+        domain.push([key, '=', value]);
+      }
+    }
+
+    return domain;
+  }
+
+  /**
+   * Retrieves records from the specified Odoo model.
+   *
+   * @param {string} objectType - The name of the Odoo model (e.g. "res.partner")
+   * @param {Object} [options] - Additional options
+   * @param {string[]} [options.fields] - The names of the fields to retrieve
+   * @param {Object} [options.where] - A filter object with the following structure:
+   *   {
+   *     [fieldName]: [value|{ $neq: value, $gt: value, $lt: value, $like: value }]
+   *   }
+   * 
+   * Example of where (MongoDB style):
+   * {
+   *   "$or": [
+   *       { "is_company": true },
+   *       { "name": { "$like": "%abc%" } }
+   *   ],
+   *   "active": true,
+   *   "$not": { "email": { "$like": "%spam%" } }
+   *   }
+   * 
+   * @param {number} [options.limit] - The maximum number of records to return
+   * @param {string} [options.order] - The field and direction of the sort order (e.g. { fieldName1: "ASC" | "DESC" })
+   * @returns {Promise<Array<Object>>} - The list of records
+   */
+  async getData(objectType, { fields, where, limit, order } = {}) {
+    console.log('getData', objectType, fields, where, limit, order);
+
+    const orderString = order
+      ? Object.entries(order)
+        .map(([field, dir]) => `${field} ${dir.toUpperCase() === 'DESC' ? 'desc' : 'asc'}`)
+        .join(', ')
+      : undefined;
+
+    const inParams = [await this.buildOdooDomain(where), fields, 0, limit || 2000];
+    if (orderString) inParams.push(orderString);
+
     console.log('inParams', inParams);
+
     return new Promise((resolve, reject) => {
       this.odoo.execute_kw(
         objectType,
         'search_read',
         [inParams],
-        //, { limit: limit || 2000, order: orderString }
-        // [[[]], {
-        //   fields: fields,
-        //   limit,
-        //   order: orderString
-        // }],
         (err, result) => {
           if (err) return reject(err);
           resolve(result);
@@ -175,6 +329,25 @@ async getObjectMetadata(objectType) {
         resolve(result);
       });
     });
+  }
+
+  async getAttachments(objectType, objectId, mimeTypePrefix = '') {
+    const domain = [['res_model', '=', objectType], ['res_id', '=', parseInt(objectId)]];
+    if (mimeTypePrefix) {
+      domain.push(['mimetype', 'ilike', mimeTypePrefix]);
+    }
+
+    const results = await this.execute_kw('ir.attachment', 'search_read', [
+      domain,
+      ['id', 'name', 'mimetype', 'datas']
+    ]);
+
+    return results.map(att => ({
+      id: att.id,
+      name: att.name,
+      contentType: att.mimetype,
+      src: `data:${att.mimetype};base64,${att.datas}`
+    }));
   }
 
 }

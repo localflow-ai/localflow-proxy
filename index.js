@@ -59,7 +59,7 @@ app.use((req, res, next) => {
     }
 
     req.session = session;
-    console.info('injected session', req.session);
+    //console.info('injected session', req.session);
     next();
 });
 
@@ -85,13 +85,14 @@ app.get('/metadata/:objectType', async (req, res) => {
 
 app.get('/data/:objectType', async (req, res) => {
     try {
-        const { fields, limit, order } = req.query;
-        console.log('getData', req.params.objectType, fields, limit, order);
+        const { fields, where, limit, order } = req.query;
+        console.log('getData', req.params.objectType, fields, limit, JSON.stringify(order));
         const parsedFields = fields ? fields.split(',') : null;
         const result = await req.session.connector.getData(req.params.objectType, {
             fields: parsedFields,
             limit: limit ? parseInt(limit) : undefined,
-            order: order || undefined,
+            order: order ? JSON.parse(order) : undefined,
+            where: where ? JSON.parse(where) : undefined
         });
         res.json(result);
     } catch (err) {
@@ -133,6 +134,18 @@ app.delete('/data/:objectType/:id', async (req, res) => {
         const result = await req.session.connector.deleteData(req.params.objectType, req.params.id);
         res.json({ success: true, result });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/attachments/:objectType/:id', async (req, res) => {
+    try { 
+        const { objectType, id } = req.params;
+        const { mimeTypePrefix } = req.query;
+        const attachments = await req.session.connector.getAttachments(objectType, id, mimeTypePrefix);
+        res.json(attachments);
+    } catch (err) {
+        console.error(err);
         res.status(500).json({ error: err.message });
     }
 });
