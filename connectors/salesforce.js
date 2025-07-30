@@ -65,7 +65,10 @@ export class SalesforceConnector {
       label: obj.label,
       labelPlural: obj.labelPlural,
       keyPrefix: obj.keyPrefix,
-      custom: obj.custom
+      custom: obj.custom,
+      layoutable: obj.layoutable,
+      updatable: obj.updateable,
+      createable: obj.createable
     }));
   }
 
