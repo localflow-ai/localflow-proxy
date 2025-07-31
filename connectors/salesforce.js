@@ -18,6 +18,15 @@ function getMimeType(ext) {
   return mimeMap[ext.toLowerCase()] || 'application/octet-stream';
 }
 
+const crypto = require('crypto');
+
+function decodeBase64UrlSafe(str) {
+  // Salesforce uses URL-safe base64 (no padding, - and _)
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - (str.length % 4)) % 4);
+  return Buffer.from(str + padding, 'base64').toString('utf8');
+}
+
 export class SalesforceConnector {
   constructor() {
     this.conn = null;
@@ -59,10 +68,18 @@ export class SalesforceConnector {
     } else if (signedRequest) {
       // Salesforce Canvas Signed Request login
       try {
-        this.conn = new jsforce.Connection();
-        const signedRequestData = this.conn.extractSignedRequest(signedRequest);
-        this.sessionInfo.instanceUrl = this.conn.instanceUrl;
-        this.sessionInfo.accessToken = this.conn.accessToken;
+        const [encodedSig, encodedPayload] = signedRequest.split('.');
+
+        if (!encodedSig || !encodedPayload) {
+          throw new Error('Malformed signed request');
+        }
+
+        const payloadJson = decodeBase64UrlSafe(encodedPayload);
+        const signedRequestData = JSON.parse(payloadJson);
+
+        this.conn = new jsforce.Connection({ 
+          signedRequest: signedRequestData 
+        });
         if (signedRequestData.context && signedRequestData.context.user) {
           this.sessionInfo.userId = signedRequestData.context.user.userId;
           this.sessionInfo.username = signedRequestData.context.user.userName; // Set username from signedRequest
