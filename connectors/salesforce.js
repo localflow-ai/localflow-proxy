@@ -21,6 +21,7 @@ function getMimeType(ext) {
 export class SalesforceConnector {
   constructor() {
     this.conn = null;
+    this.sessionInfo = null;
   }
 
   async login({ username, password, token, loginUrl, clientId, clientSecret, refreshToken, signedRequest }) {
@@ -31,6 +32,10 @@ export class SalesforceConnector {
         loginUrl: loginUrl || 'https://login.salesforce.com',
       });
       await this.conn.login(username, password + (token || ''));
+      this.sessionInfo.instanceUrl = this.conn.instanceUrl;
+      this.sessionInfo.accessToken = this.conn.accessToken;
+      this.sessionInfo.userId = this.conn.userInfo.id;
+      this.sessionInfo.orgId = this.conn.userInfo.organizationId;
     } else if (clientId && clientSecret && refreshToken) {
       // OAuth2 login using refresh token
       const oauth2 = new jsforce.OAuth2({
@@ -46,9 +51,31 @@ export class SalesforceConnector {
       await new Promise((resolve, reject) => {
         this.conn.refreshAccessToken((err, res) => {
           if (err) return reject(err);
+          this.sessionInfo.instanceUrl = this.conn.instanceUrl;
+          this.sessionInfo.accessToken = this.conn.accessToken;
           resolve(res);
         });
       });
+    } else if (signedRequest) {
+      // Salesforce Canvas Signed Request login
+      try {
+        this.conn = new jsforce.Connection();
+        const signedRequestData = this.conn.extractSignedRequest(signedRequest);
+        this.sessionInfo.instanceUrl = this.conn.instanceUrl;
+        this.sessionInfo.accessToken = this.conn.accessToken;
+        if (signedRequestData.context && signedRequestData.context.user) {
+          this.sessionInfo.userId = signedRequestData.context.user.userId;
+          this.sessionInfo.username = signedRequestData.context.user.userName; // Set username from signedRequest
+        }
+        if (signedRequestData.context && signedRequestData.context.organization) {
+          this.sessionInfo.orgId = signedRequestData.context.organization.organizationId;
+        }
+
+        console.log('[SalesforceConnector] Logged in via Signed Request');
+      } catch (error) {
+        console.error('Error processing signed request:', error);
+        throw new Error(`Failed to process Salesforce signed request: ${error.message}`);
+      }
     } else {
       throw new Error('Missing required Salesforce credentials: either username/password or clientId/clientSecret/refreshToken');
     }
