@@ -78,12 +78,14 @@ export class SalesforceConnector {
 
         const accessToken = signedRequestData.client.oauthToken;
         const instanceUrl = signedRequestData.client.instanceUrl;
+        console.log('[SalesforceConnector] signed request', signedRequestData);
         console.log('[SalesforceConnector] instanceUrl (from signed request)', this.conn.instanceUrl);
         console.log('[SalesforceConnector] accessToken (from signed request)', this.conn.accessToken);
 
         this.conn = new jsforce.Connection({ 
-          instanceUrl,
-          signedRequest: signedRequestData
+          //instanceUrl,
+          signedRequest: signedRequestData,
+          version: '64.0'
         });
         if (signedRequestData.context && signedRequestData.context.user) {
           this.sessionInfo.userId = signedRequestData.context.user.userId;
