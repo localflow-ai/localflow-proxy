@@ -88,6 +88,9 @@ export class SalesforceConnector {
         }
 
         console.log('[SalesforceConnector] Logged in via Signed Request');
+        console.log('[SalesforceConnector] instanceUrl:', this.conn.instanceUrl);
+        console.log('[SalesforceConnector] accessToken:', this.conn.accessToken);
+
       } catch (error) {
         console.error('Error processing signed request:', error);
         throw new Error(`Failed to process Salesforce signed request: ${error.message}`);
