@@ -1,4 +1,5 @@
 import jsforce from 'jsforce';
+import crypto from 'crypto';
 
 const mimeMap = {
   'jpg': 'image/jpeg',
@@ -17,8 +18,6 @@ const mimeMap = {
 function getMimeType(ext) {
   return mimeMap[ext.toLowerCase()] || 'application/octet-stream';
 }
-
-const crypto = require('crypto');
 
 function decodeBase64UrlSafe(str) {
   // Salesforce uses URL-safe base64 (no padding, - and _)
