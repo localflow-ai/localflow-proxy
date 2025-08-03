@@ -102,8 +102,8 @@ app.get('/data/:objectType', async (req, res) => {
 
 app.get('/data/:objectType/:id', async (req, res) => {
     try {
-        const { fields } = req.query;
-        const parsedFields = fields ? fields.split(',') : null;
+        const fields = typeof req.query?.fields === 'string' ? req.query.fields : undefined;
+        const parsedFields = fields ? fields.split(',') : undefined;
         const result = await req.session.connector.getRecordById(req.params.objectType, req.params.id, parsedFields);
         res.json(result);
     } catch (err) {
