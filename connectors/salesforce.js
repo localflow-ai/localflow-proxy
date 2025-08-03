@@ -139,7 +139,8 @@ export class SalesforceConnector {
         referenceTo: field.referenceTo,
         relationshipName: field.relationshipName,
         required: field.nillable === false,
-        length: field.length || 255
+        length: field.length || 255,
+        calculated: field.calculated,
       }))
     };
   }
