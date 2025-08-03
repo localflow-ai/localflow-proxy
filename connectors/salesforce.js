@@ -1,5 +1,6 @@
 import jsforce from 'jsforce';
 import crypto from 'crypto';
+import fetch from 'node-fetch'
 
 const mimeMap = {
   'jpg': 'image/jpeg',
