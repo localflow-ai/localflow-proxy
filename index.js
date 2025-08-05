@@ -150,6 +150,19 @@ app.get('/attachments/:objectType/:id', async (req, res) => {
     }
 });
 
+// TODO: not tested yet
+app.post('/api/send-email', async (req, res) => {
+  try {
+    const { toAddresses, subject, body, from } = req.body;
+
+    const result = await req.session.connector.sendEmail({ toAddresses, subject, body, from });
+    res.json({ success: true, result });
+  } catch (err) {
+    console.error('Email send failed:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
     console.log(`API Proxy running at http://localhost:${PORT}`);
 });

@@ -83,7 +83,7 @@ export class SalesforceConnector {
         console.log('[SalesforceConnector] instanceUrl (from signed request)', signedRequestData.client?.instanceUrl);
         console.log('[SalesforceConnector] accessToken (from signed request)', signedRequestData.client?.accessToken);
 
-        this.conn = new jsforce.Connection({ 
+        this.conn = new jsforce.Connection({
           instanceUrl,
           accessToken,
           //signedRequest: signedRequestData,
@@ -374,6 +374,30 @@ export class SalesforceConnector {
 
     console.log('getAttachments', files);
     return files;
+  }
+
+  async sendEmail({ to, subject, body, from }) {
+    const requestBody = {
+      inputs: [
+        {
+          emailBody: body,
+          emailAddresses: to,
+          emailSubject: subject,
+          senderType: "CurrentUser", // or "OrgWideEmailAddress"
+        },
+      ],
+    };
+
+    const response = await this.conn.request({
+      method: 'POST',
+      url: `/services/data/v${this.conn.version}/actions/standard/emailSimple`,
+      body: JSON.stringify(requestBody),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    return response;
   }
 
 }

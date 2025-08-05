@@ -350,4 +350,18 @@ export class OdooConnector {
     }));
   }
 
+  async sendEmail({ to, subject, body, from }) {
+    const emailValues = {
+      subject,
+      body_html: `<p>${body}</p>`,
+      email_to: Array.isArray(to) ? to.join(',') : to,
+      email_from: from || 'default@example.com',
+    };
+
+    const mailId = await this.executeKw('mail.mail', 'create', [emailValues]);
+    await this.executeKw('mail.mail', 'send', [[mailId]]);
+
+    return { success: true, mailId };
+  }
+
 }
