@@ -166,8 +166,8 @@ export class SalesforceConnector {
       keyPrefix: obj.keyPrefix,
       custom: obj.custom,
       layoutable: obj.layoutable,
-      updatable: obj.updateable,
-      createable: obj.createable
+      updateable: obj.updateable,
+      createable: obj.createable,
     }));
   }
 
@@ -184,6 +184,8 @@ export class SalesforceConnector {
         required: field.nillable === false,
         length: field.length || 255,
         calculated: field.calculated,
+        createable: field.createable,
+        updateable: field.updateable,
       }))
     };
   }

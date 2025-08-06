@@ -83,7 +83,7 @@ export class OdooConnector {
         labelPlural: m.name + 's',
         keyPrefix: '',     // Odoo doesn't use this — placeholder
         custom: false,      // Placeholder — customize if needed
-        layoutable
+        layoutable,
       };
     });
   }
@@ -131,7 +131,8 @@ export class OdooConnector {
         type: this.normalizeOdooType(field.ttype),
         required: field.required,
         length: field.size || 255,
-        updatable: this.isFieldWritable(field),
+        updateable: this.isFieldWritable(field),
+        createable: this.isFieldWritable(field),
         referenceTo: field.relation ? [field.relation] : undefined
       }))
     };
