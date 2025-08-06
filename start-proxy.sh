@@ -1,5 +1,7 @@
 #!/bin/bash
 
+rm proxy.log
+
 # Load NVM (if not already available in your shell)
 export NVM_DIR="$HOME/.nvm"
 # Source nvm.sh to use nvm command
