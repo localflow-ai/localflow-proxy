@@ -150,6 +150,16 @@ app.get('/attachments/:objectType/:id', async (req, res) => {
     }
 });
 
+app.get('/api/context', async (req, res) => {
+  try {
+    const context = await req.session.connector.getContext();
+    res.json(context);
+  } catch (err) {
+    console.error('Error in /context/context:', err);
+    res.status(500).json({ error: 'Failed to fetch context' });
+  }
+});
+
 // TODO: not tested yet
 app.post('/api/send-email', async (req, res) => {
   try {

@@ -11,6 +11,7 @@ export class OdooConnector {
     return new Promise((resolve, reject) => {
       this.odoo.connect(err => {
         if (err) return reject(err);
+        this.sessionInfo.userId = this.odoo.uid;
         resolve();
       });
     });
@@ -18,6 +19,39 @@ export class OdooConnector {
 
   async getSessionInfo() {
     return this.sessionInfo;
+  }
+
+  async getContext() {
+    const context = {
+      configuration: {
+        userObject: 'res.users',
+        userFields: ['id', 'name', 'email', 'login', 'active'],
+        userWhere: { "active": true },
+        userNameField: 'login',
+        idField: 'id'
+      }
+    };
+    if (this.sessionInfo.userId) {
+      const [user] = await this.execute_kw('res.users', 'read', [[this.sessionInfo.userId], ['id', 'name', 'email', 'login', 'groups_id']]);
+      const [groupSystemRef] = await this.execute_kw('ir.model.data', 'get_object_reference', ['base', 'group_system']);
+
+      context.user = {
+        id: user.id,
+        name: user.login,
+        email: user.email,
+        isAdmin: user.groups_id.includes(groupSystemRef[1]),
+      };
+
+      const groups = await this.execute_kw('res.groups', 'read', [user.groups_id, ['id', 'name', 'category_id']]);
+
+      context.user.permissions = groups.map(g => ({
+        type: 'Group',
+        id: g.id,
+        name: g.name,
+        category: g.category_id?.[1] || null
+      }));
+    }
+    return context;
   }
 
   async listObjectTypes() {

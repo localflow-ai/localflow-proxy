@@ -114,6 +114,49 @@ export class SalesforceConnector {
     return this.sessionInfo;
   }
 
+  async getContext() {
+    const context = {
+      configuration: {
+        userObject: 'User',
+        userFields: ['Id', 'Name', 'FirstName', 'LastName', 'Email', 'Username', 'IsActive'],
+        userWhere: { "IsActive": true, "UserType": 'Standard' },
+        userNameField: 'Username',
+        idField: 'Id'
+      }
+    };
+    if (this.sessionInfo.userId) {
+      const user = await this.conn.sobject("User").retrieve(this.sessionInfo.userId);
+      const profile = await this.conn.sobject("Profile").retrieve(user.ProfileId);
+      context.user = {
+        id: user.Id,
+        name: user.Username,
+        firstName: user.FirstName,
+        lastName: user.LastName,
+        email: user.Email,
+        locale: user.LocaleSidKey,
+        timezone: user.TimeZoneSidKey,
+        language: user.LanguageLocaleKey,
+        isAdmin: profile.Name.toLowerCase().includes('admin'),
+      };
+      const permSets = await this.conn.query(`
+        SELECT PermissionSet.Id, PermissionSet.Name
+        FROM PermissionSetAssignment 
+        WHERE Assignee.Id = '${this.sessionInfo.userId}'
+      `);
+
+      context.user.permissions = [
+        { type: 'Profile', id: profile.Id, name: profile.Name },
+        ...permSets.records.map(r => ({
+          type: 'PermissionSet',
+          id: r.PermissionSet.Id,
+          name: r.PermissionSet.Name,
+        }))
+      ];
+
+    }
+    return context;
+  }
+
   async listObjectTypes() {
     const result = await this.conn.describeGlobal();
     return result.sobjects.map(obj => ({
