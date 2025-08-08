@@ -89,6 +89,18 @@ export class OdooConnector {
   }
 
   async getObjectMetadata(objectType) {
+    // const fields = await new promise((resolve, reject) => {
+    //   this.odoo.execute_kw(
+    //     objecttype,
+    //     'fields_get',
+    //     [[]],
+    //     (err, result) => {
+    //       if (err) return reject(err);
+    //       console.info('fields_get result', result);
+    //       resolve(result);
+    //     }
+    //   );
+    // });
     // Get fields
     const fieldParams = [[['model', '=', objectType]]];
     const fields = await new Promise((resolve, reject) => {
@@ -123,7 +135,7 @@ export class OdooConnector {
       ...modelInfo,
       name: objectType,
       layoutable,
-      fields: fields.map(field => ({
+      fields: /*Object.entries(fields)*/fields.map((field) => ({
         ...field,
         name: field.name,
         relationshipName: field.name,

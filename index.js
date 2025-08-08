@@ -17,7 +17,20 @@ const connectorMap = {
     odoo: OdooConnector
 };
 
-app.post('/session', async (req, res) => {
+const asyncHandler = fn => (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(err => {
+        console.error('[daquota proxy] internal error', err);
+        res.status(500).json({ error: err.message || 'Internal server error' });
+        next(err);
+    });
+};
+
+// app.use((err, req, res, next) => {
+//     console.error('[daquota proxy] internal error', err);
+//     res.status(500).json({ error: err.message || 'Internal server error' });
+// });
+
+app.post('/session', asyncHandler(async (req, res) => {
     const { type, config } = req.body;
     console.log('[daquota proxy] create new session', type, config);
     const ConnectorClass = connectorMap[type?.toLowerCase()];
@@ -32,20 +45,10 @@ app.post('/session', async (req, res) => {
     } catch (err) {
         res.status(401).json({ error: 'Authentication failed', detail: err.message });
     }
-});
-
-app.get('/session', async (req, res) => {
-    const token = req.query.token;
-    if (!token) return res.status(400).json({ error: 'Missing token' });
-
-    const session = getSession(token, req).getSessionInfo();
-    if (!session) return res.status(403).json({ error: 'Session expired or invalid' });
-
-    res.json(session);
-});
+}));
 
 app.use((req, res, next) => {
-    console.info('intercept', req.path);
+    console.info('[daquota proxy] request', req.path);
     const auth = req.headers.authorization;
     if (!auth || !auth.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Missing or invalid token' });
@@ -63,115 +66,80 @@ app.use((req, res, next) => {
     next();
 });
 
-app.get('/metadata', async (req, res) => {
-    try {
-        console.log('GetMetadata');
-        const result = await req.session.connector.listObjectTypes();
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+app.get('/session', asyncHandler(async (req, res) => {
+    const token = req.query.token;
+    if (!token) return res.status(400).json({ error: 'Missing token' });
 
-app.get('/metadata/:objectType', async (req, res) => {
-    try {
-        console.log('GetMetadata', req.params.objectType);
-        const result = await req.session.connector.getObjectMetadata(req.params.objectType);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const session = getSession(token, req).getSessionInfo();
+    if (!session) return res.status(403).json({ error: 'Session expired or invalid' });
 
-app.get('/data/:objectType', async (req, res) => {
-    try {
-        const { fields, where, limit, order } = req.query;
-        console.log('getData', req.params.objectType, fields, limit, JSON.stringify(order));
-        const parsedFields = fields ? fields.split(',') : null;
-        const result = await req.session.connector.getData(req.params.objectType, {
-            fields: parsedFields,
-            limit: limit ? parseInt(limit) : undefined,
-            order: order ? JSON.parse(order) : undefined,
-            where: where ? JSON.parse(where) : undefined
-        });
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    res.json(session);
+}));
 
-app.get('/data/:objectType/:id', async (req, res) => {
-    try {
-        const fields = typeof req.query?.fields === 'string' ? req.query.fields : undefined;
-        const parsedFields = fields ? fields.split(',') : undefined;
-        const result = await req.session.connector.getRecordById(req.params.objectType, req.params.id, parsedFields);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+app.get('/metadata', asyncHandler(async (req, res) => {
+    const result = await req.session.connector.listObjectTypes();
+    res.json(result);
+}));
 
-app.post('/data/:objectType', async (req, res) => {
-    try {
-        const result = await req.session.connector.createRecord(req.params.objectType, req.body);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+app.get('/metadata/:objectType', asyncHandler(async (req, res) => {
+    const result = await req.session.connector.getObjectMetadata(req.params.objectType);
+    res.json(result);
+}));
 
-app.put('/data/:objectType/:id', async (req, res) => {
-    try {
-        const result = await req.session.connector.updateData(req.params.objectType, req.params.id, req.body);
-        res.json({ success: true, result });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+app.get('/data/:objectType', asyncHandler(async (req, res, next) => {
+    const { fields, where, limit, order } = req.query;
+    console.log('[daquota proxy] getData', req.params.objectType, fields, limit, JSON.stringify(order));
+    const parsedFields = fields ? fields.split(',') : null;
+    const result = await req.session.connector.getData(req.params.objectType, {
+        fields: parsedFields,
+        limit: limit ? parseInt(limit) : undefined,
+        order: order ? JSON.parse(order) : undefined,
+        where: where ? JSON.parse(where) : undefined
+    });
+    res.json(result);
+}));
 
-app.delete('/data/:objectType/:id', async (req, res) => {
-    try {
-        const result = await req.session.connector.deleteData(req.params.objectType, req.params.id);
-        res.json({ success: true, result });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+app.get('/data/:objectType/:id', asyncHandler(async (req, res) => {
+    const fields = typeof req.query?.fields === 'string' ? req.query.fields : undefined;
+    const parsedFields = fields ? fields.split(',') : undefined;
+    const result = await req.session.connector.getRecordById(req.params.objectType, req.params.id, parsedFields);
+    res.json(result);
+}));
 
-app.get('/attachments/:objectType/:id', async (req, res) => {
-    try { 
-        const { objectType, id } = req.params;
-        const { mimeTypePrefix } = req.query;
-        const attachments = await req.session.connector.getAttachments(objectType, id, mimeTypePrefix);
-        res.json(attachments);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
-});
+app.post('/data/:objectType', asyncHandler(async (req, res) => {
+    const result = await req.session.connector.createRecord(req.params.objectType, req.body);
+    res.json(result);
+}));
 
-app.get('/api/context', async (req, res) => {
-  try {
+app.put('/data/:objectType/:id', asyncHandler(async (req, res) => {
+    const result = await req.session.connector.updateData(req.params.objectType, req.params.id, req.body);
+    res.json({ success: true, result });
+}));
+
+app.delete('/data/:objectType/:id', asyncHandler(async (req, res) => {
+    const result = await req.session.connector.deleteData(req.params.objectType, req.params.id);
+    res.json({ success: true, result });
+}));
+
+app.get('/attachments/:objectType/:id', asyncHandler(async (req, res) => {
+    const { objectType, id } = req.params;
+    const { mimeTypePrefix } = req.query;
+    const attachments = await req.session.connector.getAttachments(objectType, id, mimeTypePrefix);
+    res.json(attachments);
+}));
+
+app.get('/api/context', asyncHandler(async (req, res) => {
     const context = await req.session.connector.getContext();
     res.json(context);
-  } catch (err) {
-    console.error('Error in /context/context:', err);
-    res.status(500).json({ error: 'Failed to fetch context' });
-  }
-});
+}));
 
 // TODO: not tested yet
-app.post('/api/send-email', async (req, res) => {
-  try {
+app.post('/api/send-email', asyncHandler(async (req, res) => {
     const { toAddresses, subject, body, from } = req.body;
 
     const result = await req.session.connector.sendEmail({ toAddresses, subject, body, from });
     res.json({ success: true, result });
-  } catch (err) {
-    console.error('Email send failed:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+}));
 
 app.listen(PORT, () => {
     console.log(`API Proxy running at http://localhost:${PORT}`);

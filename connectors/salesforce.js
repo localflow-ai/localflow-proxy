@@ -331,23 +331,27 @@ export class SalesforceConnector {
     console.log('getData, soql', soql);
     const records = [];
     return new Promise((resolve, reject) => {
-      const query = this.conn.query(soql)
-        .on('record', (record) => {
-          records.push(record);
-        })
-        .on('end', () => {
-          console.log(`[daquota proxy] total in database: ${query.totalSize}`);
-          console.log(`[daquota proxy] total fetched: ${query.totalFetched}`);
-          resolve(records);
-        })
-        .on('error', (err) => {
-          console.error('[daquota proxy] error reading ' + this.objectType, err);
+      try {
+        const query = this.conn.query(soql)
+          .on('record', (record) => {
+            records.push(record);
+          })
+          .on('end', () => {
+            console.log(`[daquota proxy] total in database: ${query.totalSize}`);
+            console.log(`[daquota proxy] total fetched: ${query.totalFetched}`);
+            resolve(records);
+          })
+          .on('error', (err) => {
+            console.error('[daquota proxy] error querying ' + this.objectType, err);
+            reject(err);
+          })
+          .run({ autoFetch: true, maxFetch: limit || 2000 }); // fetch more than 2000 records
+          query.catch?.(reject);
+        } catch (err) {
+          console.error('[daquota proxy] error querying (2) ' + this.objectType, err);
           reject(err);
-        })
-        .run({ autoFetch: true, maxFetch: limit || 2000 }); // fetch more than 2000 records
+        }
     });
-
-    return records;
   }
 
   async getRecordById(objectType, id, fields) {
