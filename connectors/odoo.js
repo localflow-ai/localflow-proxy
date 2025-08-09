@@ -1,8 +1,21 @@
 import Odoo from 'odoo-xmlrpc';
+import { BaseConnector } from '../base-connector.js';
+import xmlrpc from 'xmlrpc';
 
-export class OdooConnector {
+export class OdooConnector extends BaseConnector {
   constructor() {
+    super();
     this.odoo = null;
+    // this.inputKeyMap = {
+    //   'Id': 'id',
+    //   'Name': 'name',
+    //   'Email': 'email',
+    // };
+    // this.outputKeyMap = {
+    //   'id': 'Id',
+    //   'name': 'Name',
+    //   'email': 'Email',
+    // };
   }
 
   async login({ url, db, username, password }) {
@@ -11,47 +24,82 @@ export class OdooConnector {
     return new Promise((resolve, reject) => {
       this.odoo.connect(err => {
         if (err) return reject(err);
-        this.sessionInfo.userId = this.odoo.uid;
-        resolve();
+
+        // Manually set up a "common" client for authentication
+        const common = xmlrpc.createClient({ url: `${url}/xmlrpc/2/common` });
+
+        common.methodCall('authenticate', [db, username, password, {}], (err, uid) => {
+          if (err) return reject(err);
+          if (!uid) return reject(new Error('Invalid login credentials'));
+
+          console.log('[OdooConnector] authenticated to Odoo', uid);
+          this.sessionInfo.userId = uid;
+          this.odoo.uid = uid; // Store for later use
+          resolve();
+        });
+
+      });
+    });
+
+    // this.odoo.authenticate(db, username, password, (err, uid) => {
+    //   if (err) return reject(err);
+
+    //   console.log('[OdooConnector] connected to Odoo', uid);
+    //   this.sessionInfo.userId = uid;
+    //   this.odoo.uid = uid; // store in instance if needed
+    //   resolve();
+    // });
+  }
+
+  async execute_kw(model, method, args = [], kwargs = {}) {
+    return new Promise((resolve, reject) => {
+      this.odoo.execute_kw(model, method, [args, kwargs], (err, value) => {
+        if (err) return reject(err);
+        resolve(value);
       });
     });
   }
 
   async getSessionInfo() {
-    return this.sessionInfo;
-  }
-
-  async getContext() {
-    const context = {
-      configuration: {
-        userObject: 'res.users',
-        userFields: ['id', 'name', 'email', 'login', 'active'],
-        userWhere: { "active": true },
-        userNameField: 'login',
-        idField: 'id'
-      }
-    };
-    if (this.sessionInfo.userId) {
-      const [user] = await this.execute_kw('res.users', 'read', [[this.sessionInfo.userId], ['id', 'name', 'email', 'login', 'groups_id']]);
-      const [groupSystemRef] = await this.execute_kw('ir.model.data', 'get_object_reference', ['base', 'group_system']);
-
-      context.user = {
-        id: user.id,
-        name: user.login,
-        email: user.email,
-        isAdmin: user.groups_id.includes(groupSystemRef[1]),
+    console.log('[OdooConnector] sessionInfo before filling', JSON.stringify(this.sessionInfo, null, 2));
+    if (!this.sessionInfo.context) {
+      const context = {
+        configuration: {
+          userObject: 'res.users',
+          userFields: ['id', 'name', 'email', 'login', 'active'].map(f => this.normalizeOutputKey(f)),
+          userWhere: { [this.normalizeOutputKey('active')]: true },
+          userNameField: this.normalizeOutputKey('login'),
+          idField: this.normalizeOutputKey('id')
+        }
       };
+      if (this.sessionInfo.userId) {
+        const [user] = await this.execute_kw('res.users', 'read', [[this.sessionInfo.userId], ['id', 'name', 'email', 'login', 'groups_id']]);
+        console.log('[OdooConnector] user', user);
+        //const [groupSystemRef] = await this.execute_kw('ir.model.data', 'get_object_reference', [['group_system']]);
+        //const groupSystemRef = await this.execute_kw('res.groups', 'search_read', [[['name', '=', 'group_system']], ['id']]);
+        //console.log('[OdooConnector] groupSystemRef', groupSystemRef);
 
-      const groups = await this.execute_kw('res.groups', 'read', [user.groups_id, ['id', 'name', 'category_id']]);
+        const groups = await this.execute_kw('res.groups', 'read', [user.groups_id, ['id', 'name', 'category_id']]);
+        console.log('[OdooConnector] groups', groups);
 
-      context.user.permissions = groups.map(g => ({
-        type: 'Group',
-        id: g.id,
-        name: g.name,
-        category: g.category_id?.[1] || null
-      }));
+        context.user = {
+          id: user.id,
+          name: user.login,
+          email: user.email,
+          isAdmin: !!groups.find(g => g.name === 'Settings') //user.groups_id.includes(groupSystemRef[0]),
+        };
+
+        context.user.permissions = groups.map(g => ({
+          type: 'Group',
+          id: g.id,
+          name: g.name,
+          category: g.category_id?.[1] || null
+        }));
+      }
+      this.sessionInfo.context = context;
     }
-    return context;
+    console.log('[OdooConnector] sessionInfo', JSON.stringify(this.sessionInfo, null, 2));
+    return this.sessionInfo;
   }
 
   async listObjectTypes() {
@@ -135,10 +183,10 @@ export class OdooConnector {
       ...modelInfo,
       name: objectType,
       layoutable,
-      fields: /*Object.entries(fields)*/fields.map((field) => ({
+      fields: fields.map((field) => ({
         ...field,
-        name: field.name,
-        relationshipName: field.name,
+        name: this.normalizeOutputKey(field.name),
+        relationshipName: this.normalizeOutputKey(field.name),
         label: field.field_description,
         type: this.normalizeOdooType(field.ttype),
         required: field.required,
@@ -172,59 +220,12 @@ export class OdooConnector {
       !['id', 'create_uid', 'create_date', 'write_uid', 'write_date'].includes(field.name);
   }
 
-  // buildOdooDomain(where) {
-  //   if (!where || typeof where !== 'object') return [];
-
-  //   const domain = [];
-
-  //   for (const key in where) {
-  //     const value = where[key];
-
-  //     if (key === '$or' && Array.isArray(value)) {
-  //       domain.push('|'); // Odoo uses prefix notation for OR
-  //       const parts = value.map(buildOdooDomain).flat();
-  //       // Odoo OR only supports two elements at a time:
-  //       for (let i = 0; i < parts.length - 1; i++) {
-  //         domain.unshift('|');
-  //       }
-  //       domain.push(...parts);
-  //     } else if (key === '$not') {
-  //       const negated = buildOdooDomain(value);
-  //       for (const cond of negated) {
-  //         domain.push(['!', cond]);
-  //       }
-  //     } else if (typeof value === 'object' && value !== null) {
-  //       const [operator, operand] = Object.entries(value)[0];
-  //       switch (operator) {
-  //         case '$like':
-  //           domain.push([key, 'ilike', operand.replace(/%/g, '')]);
-  //           break;
-  //         case '$neq':
-  //           domain.push([key, '!=', operand]);
-  //           break;
-  //         case '$gt':
-  //           domain.push([key, '>', operand]);
-  //           break;
-  //         case '$lt':
-  //           domain.push([key, '<', operand]);
-  //           break;
-  //         default:
-  //           throw new Error(`Unsupported operator: ${operator}`);
-  //       }
-  //     } else {
-  //       domain.push([key, '=', value]);
-  //     }
-  //   }
-
-  //   return domain;
-  // }
-
   async buildOdooDomain(where) {
     if (!where || typeof where !== 'object') return [];
 
     const domain = [];
 
-    for (const key in where) {
+    for (let key in where) {
       const value = where[key];
 
       if (key === '$or' && Array.isArray(value)) {
@@ -239,6 +240,7 @@ export class OdooConnector {
         }
       } else if (typeof value === 'object' && value !== null) {
         const [operator, operand] = Object.entries(value)[0];
+        key = this.normalizeInputKey(key);
 
         switch (operator) {
           case '$like':
@@ -314,11 +316,11 @@ export class OdooConnector {
 
     const orderString = order
       ? Object.entries(order)
-        .map(([field, dir]) => `${field} ${dir.toUpperCase() === 'DESC' ? 'desc' : 'asc'}`)
+        .map(([field, dir]) => `${this.normalizeInputKey(field)} ${dir.toUpperCase() === 'DESC' ? 'desc' : 'asc'}`)
         .join(', ')
       : undefined;
 
-    const inParams = [await this.buildOdooDomain(where), fields, 0, limit || 2000];
+    const inParams = [await this.buildOdooDomain(where), fields.map(f => this.normalizeInputKey(f)), 0, limit || 2000];
     if (orderString) inParams.push(orderString);
 
     console.log('inParams', inParams);
@@ -330,7 +332,7 @@ export class OdooConnector {
         [inParams],
         (err, result) => {
           if (err) return reject(err);
-          resolve(result);
+          resolve(this.normalizeOutputData(result));
         }
       );
     });
@@ -345,7 +347,7 @@ export class OdooConnector {
         [[parsedId], { fields }],
         (err, result) => {
           if (err) return reject(err);
-          resolve(result[0]);
+          resolve(this.normalizeOutputData(result[0]));
         }
       );
     });
@@ -353,7 +355,7 @@ export class OdooConnector {
 
   async createRecord(objectType, data) {
     return new Promise((resolve, reject) => {
-      this.odoo.execute_kw(objectType, 'create', [data], (err, id) => {
+      this.odoo.execute_kw(objectType, 'create', [this.normalizeInputData(data)], (err, id) => {
         if (err) return reject(err);
         resolve({ id });
       });
@@ -362,7 +364,7 @@ export class OdooConnector {
 
   async updateData(objectType, id, data) {
     return new Promise((resolve, reject) => {
-      this.odoo.execute_kw(objectType, 'write', [[[parseInt(id)], data]], (err, result) => {
+      this.odoo.execute_kw(objectType, 'write', [[[parseInt(id)], this.normalizeInputData(data)]], (err, result) => {
         if (err) return reject(err);
         resolve(result);
       });

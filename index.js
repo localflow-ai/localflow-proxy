@@ -32,7 +32,7 @@ const asyncHandler = fn => (req, res, next) => {
 
 app.post('/session', asyncHandler(async (req, res) => {
     const { type, config } = req.body;
-    console.log('[daquota proxy] create new session', type, config);
+    console.log('[daquota proxy] create new session', type);
     const ConnectorClass = connectorMap[type?.toLowerCase()];
     if (!ConnectorClass) return res.status(400).json({ error: 'Unsupported connector type', details: 'Valid connector types are: salesforce, odoo' });
 
@@ -67,14 +67,15 @@ app.use((req, res, next) => {
 });
 
 app.get('/session', asyncHandler(async (req, res) => {
-    const token = req.query.token;
-    if (!token) return res.status(400).json({ error: 'Missing token' });
-
-    const session = getSession(token, req).getSessionInfo();
-    if (!session) return res.status(403).json({ error: 'Session expired or invalid' });
-
-    res.json(session);
+    const sessionInfo = await req.session.connector.getSessionInfo();
+    console.log('[daquota proxy] sessionInfo', JSON.stringify(sessionInfo, null, 2));
+    res.json(sessionInfo);
 }));
+
+app.post('/session/field-mapping', (req, res) => {
+    const result = req.session.connector.createFieldMapping(req.body);
+    res.json(result);
+});
 
 app.get('/metadata', asyncHandler(async (req, res) => {
     const result = await req.session.connector.listObjectTypes();
@@ -88,7 +89,7 @@ app.get('/metadata/:objectType', asyncHandler(async (req, res) => {
 
 app.get('/data/:objectType', asyncHandler(async (req, res, next) => {
     const { fields, where, limit, order } = req.query;
-    console.log('[daquota proxy] getData', req.params.objectType, fields, limit, JSON.stringify(order));
+    console.log('[daquota proxy] getData', req.params.objectType, fields, where, limit, order);
     const parsedFields = fields ? fields.split(',') : null;
     const result = await req.session.connector.getData(req.params.objectType, {
         fields: parsedFields,
@@ -126,11 +127,6 @@ app.get('/attachments/:objectType/:id', asyncHandler(async (req, res) => {
     const { mimeTypePrefix } = req.query;
     const attachments = await req.session.connector.getAttachments(objectType, id, mimeTypePrefix);
     res.json(attachments);
-}));
-
-app.get('/api/context', asyncHandler(async (req, res) => {
-    const context = await req.session.connector.getContext();
-    res.json(context);
 }));
 
 // TODO: not tested yet

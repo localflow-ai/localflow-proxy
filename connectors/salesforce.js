@@ -1,6 +1,7 @@
 import jsforce from 'jsforce';
 import crypto from 'crypto';
 import fetch from 'node-fetch'
+import { BaseConnector } from '../base-connector.js';
 
 const mimeMap = {
   'jpg': 'image/jpeg',
@@ -27,8 +28,9 @@ function decodeBase64UrlSafe(str) {
   return Buffer.from(str + padding, 'base64').toString('utf8');
 }
 
-export class SalesforceConnector {
+export class SalesforceConnector extends BaseConnector {
   constructor() {
+    super();
     this.conn = null;
     this.sessionInfo = null;
   }
@@ -111,50 +113,49 @@ export class SalesforceConnector {
   }
 
   async getSessionInfo() {
-    return this.sessionInfo;
-  }
-
-  async getContext() {
-    const context = {
-      configuration: {
-        userObject: 'User',
-        userFields: ['Id', 'Name', 'FirstName', 'LastName', 'Email', 'Username', 'IsActive'],
-        userWhere: { "IsActive": true, "UserType": 'Standard' },
-        userNameField: 'Username',
-        idField: 'Id'
-      }
-    };
-    if (this.sessionInfo.userId) {
-      const user = await this.conn.sobject("User").retrieve(this.sessionInfo.userId);
-      const profile = await this.conn.sobject("Profile").retrieve(user.ProfileId);
-      context.user = {
-        id: user.Id,
-        name: user.Username,
-        firstName: user.FirstName,
-        lastName: user.LastName,
-        email: user.Email,
-        locale: user.LocaleSidKey,
-        timezone: user.TimeZoneSidKey,
-        language: user.LanguageLocaleKey,
-        isAdmin: profile.Name.toLowerCase().includes('admin'),
+    if (!this.sessionInfo.context) {
+      const context = {
+        configuration: {
+          userObject: 'User',
+          userFields: ['Id', 'Name', 'FirstName', 'LastName', 'Email', 'Username', 'IsActive'],
+          userWhere: { "IsActive": true, "UserType": 'Standard' },
+          userNameField: 'Username',
+          idField: 'Id'
+        }
       };
-      const permSets = await this.conn.query(`
-        SELECT PermissionSet.Id, PermissionSet.Name
-        FROM PermissionSetAssignment 
-        WHERE Assignee.Id = '${this.sessionInfo.userId}'
-      `);
+      if (this.sessionInfo.userId) {
+        const user = await this.conn.sobject("User").retrieve(this.sessionInfo.userId);
+        const profile = await this.conn.sobject("Profile").retrieve(user.ProfileId);
+        context.user = {
+          id: user.Id,
+          name: user.Username,
+          firstName: user.FirstName,
+          lastName: user.LastName,
+          email: user.Email,
+          locale: user.LocaleSidKey,
+          timezone: user.TimeZoneSidKey,
+          language: user.LanguageLocaleKey,
+          isAdmin: profile.Name.toLowerCase().includes('admin'),
+        };
+        const permSets = await this.conn.query(`
+          SELECT PermissionSet.Id, PermissionSet.Name
+          FROM PermissionSetAssignment 
+          WHERE Assignee.Id = '${this.sessionInfo.userId}'
+        `);
 
-      context.user.permissions = [
-        { type: 'Profile', id: profile.Id, name: profile.Name },
-        ...permSets.records.map(r => ({
-          type: 'PermissionSet',
-          id: r.PermissionSet.Id,
-          name: r.PermissionSet.Name,
-        }))
-      ];
+        context.user.permissions = [
+          { type: 'Profile', id: profile.Id, name: profile.Name },
+          ...permSets.records.map(r => ({
+            type: 'PermissionSet',
+            id: r.PermissionSet.Id,
+            name: r.PermissionSet.Name,
+          }))
+        ];
 
+      }
+      this.sessionInfo.context = context;
     }
-    return context;
+    return this.sessionInfo;
   }
 
   async listObjectTypes() {
