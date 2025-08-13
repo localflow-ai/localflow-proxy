@@ -183,10 +183,10 @@ export class OdooConnector extends BaseConnector {
       ...modelInfo,
       name: objectType,
       layoutable,
-      fields: fields.map((field) => ({
+      fields: this.processFields(objectType, fields.map((field) => ({
         ...field,
-        name: this.normalizeOutputKey(field.name),
-        relationshipName: this.normalizeOutputKey(field.name),
+        name: field.name,
+        relationshipName: field.name,
         label: field.field_description,
         type: this.normalizeOdooType(field.ttype),
         required: field.required,
@@ -194,7 +194,7 @@ export class OdooConnector extends BaseConnector {
         updateable: this.isFieldWritable(field),
         createable: this.isFieldWritable(field),
         referenceTo: field.relation ? [field.relation] : undefined
-      }))
+      })))
     };
   }
   // Basic mapping from Odoo types to Salesforce-like types
@@ -320,7 +320,7 @@ export class OdooConnector extends BaseConnector {
         .join(', ')
       : undefined;
 
-    const inParams = [await this.buildOdooDomain(where), fields.map(f => this.normalizeInputKey(f)), 0, limit || 2000];
+    const inParams = [await this.buildOdooDomain(where), this.normalizeInputFieldNames(fields), 0, limit || 2000];
     if (orderString) inParams.push(orderString);
 
     console.log('inParams', inParams);
@@ -364,7 +364,10 @@ export class OdooConnector extends BaseConnector {
 
   async updateData(objectType, id, data) {
     return new Promise((resolve, reject) => {
-      this.odoo.execute_kw(objectType, 'write', [[[parseInt(id)], this.normalizeInputData(data)]], (err, result) => {
+      console.log('updateData', objectType, id, data);
+      const inParams = [[parseInt(id)], this.normalizeInputData(data)];
+      console.log('updateData', inParams);
+      this.odoo.execute_kw(objectType, 'write', [inParams], (err, result) => {
         if (err) return reject(err);
         resolve(result);
       });
