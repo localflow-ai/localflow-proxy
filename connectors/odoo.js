@@ -355,7 +355,10 @@ export class OdooConnector extends BaseConnector {
 
   async createRecord(objectType, data) {
     return new Promise((resolve, reject) => {
-      this.odoo.execute_kw(objectType, 'create', [this.normalizeInputData(data)], (err, id) => {
+      console.log('createRecord', objectType, data);
+      const inParams = [this.normalizeInputData(data)];
+      console.log('createRecord', inParams);
+      this.odoo.execute_kw(objectType, 'create', [inParams], (err, id) => {
         if (err) return reject(err);
         resolve({ id });
       });
