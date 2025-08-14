@@ -48,7 +48,7 @@ app.post('/session', asyncHandler(async (req, res) => {
 }));
 
 app.use((req, res, next) => {
-    console.info('[daquota proxy] request', req.path);
+    console.info('[daquota proxy] request', req.method, req.path);
     const auth = req.headers.authorization;
     if (!auth || !auth.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Missing or invalid token' });
