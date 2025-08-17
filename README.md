@@ -1,7 +1,46 @@
+# DEVELOPMENTS COURT-TERME A PREVOIR
+
+- Support de nouveaux connecteurs
+- Création d'un script de test de conformité des connecteurs
+- Création d'une page de login qui permet de rentrer ses creds et qui redirige vers une url en passant le token pour que l'app puisse utiliser l'API du proxy avec une session qui va bien
+
+## Connecteurs à supporter
+
+- Salesforce [DONE]
+- Odoo [DONE]
+- Zoho
+- Hubspot
+- Quickbooks online
+- Xero
+- NetSuite
+- WP ERP
+- ERPNext
+- SuiteCRM
+- SAP Business One
+- Dynamics 365 Business Central (Microsoft)
+- Freshsales
+- Britix24
+
+## Gestion des sessions
+
+Comme ça je dirais qu'on aura besoin des propriétés suivantes dans un futur relativement proche (mais pas immediat pour tout) :
+- Nettoyer les sessions plus utilisées (peut-être avoir un pool de sessions pour éviter que cela ne prenne trop de mémoire)
+- Dans la même veine (sujet connexe), sessions persistentes (si tu redémarres le proxy, elles devraient se réinitialiser sans avoir besoin d'une reconnection explicite pour le client
+- Sécuriser un minimum le token pour que d'autres ne puissent pas le réutiliser pour faire n'importe quoi (c'est là éventuellement que JWT pourrait aider mais on peut aussi simplement lié la session au domaine pour éviter une utilisation cross-domain ce qui a priori me suffirait comme sécu).
+- Interface (CLI ou WEB) d'administration pour suivre les sessions en cours, potentiellement les révoquer, ...
+- Raffraichissement auto pour éviter que la connexion au backoffice n'expire (mais je pense que certains clients le font built-in donc ce ne sera utile seulement pour pour certains connecteurs qui utilisent une API bas-niveau je pense)
+
+Et j'oublie peut-être des sujets, mais bon, pour l'instant au stade ou j'en suis, il n'y a rien d'urgent. Les importants étant probablement le nettoyage et la sécu :)
+
 # How to run
 
 npm install
 npm start
+
+On server:
+
+pkill -f "node index.js"
+./start-proxy.sh 
 
 # Dev mode
 
