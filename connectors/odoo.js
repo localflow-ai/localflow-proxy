@@ -193,7 +193,7 @@ export class OdooConnector extends BaseConnector {
         length: field.size || 255,
         updateable: this.isFieldWritable(field),
         createable: this.isFieldWritable(field),
-        referenceTo: field.relation ? [field.relation] : undefined
+        referenceTo: field.relation ? [field.relation] : []
       })))
     };
   }
