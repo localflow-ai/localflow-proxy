@@ -73,7 +73,17 @@ app.get('/session', asyncHandler(async (req, res) => {
 }));
 
 app.post('/session/field-mapping', (req, res) => {
-    const result = req.session.connector.createFieldMapping(req.body);
+    const result = req.session.connector.createFieldMapping('$global', req.body);
+    res.json(result);
+});
+
+app.post('/session/field-mapping/:objectType', (req, res) => {
+    const result = req.session.connector.createFieldMapping(req.params.objectType, req.body);
+    res.json(result);
+});
+
+app.post('/session/object-type-mapping', (req, res) => {
+    const result = req.session.connector.createObjectTypeMapping(req.body);
     res.json(result);
 });
 

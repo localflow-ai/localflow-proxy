@@ -39,16 +39,31 @@ export class BaseConnector {
         return normalizedMapping;
     }
 
+    async createObjectTypeMapping(mapping) {
+        console.log('[daquota proxy] creating object type mapping', mapping);
+        if (!this.sessionInfo.mappings) this.sessionInfo.mappings = {};
+        if (!this.sessionInfo.mappings.objectTypeMapping) this.sessionInfo.mappings.objectTypeMapping = {};
+        this.sessionInfo.mappings.objectTypeMapping = mapping;
+        this.sessionInfo.mappings.objectTypeMappingReversed = Object.fromEntries(
+            Object.entries(mapping).map(([k, v]) => [v, k])
+        );
+        console.log('[daquota proxy] object type mapping', this.sessionInfo.mappings.objectTypeMapping);
+        console.log('[daquota proxy] reversed object type mapping', this.sessionInfo.mappings.objectTypeMappingReversed);
+        return { success: true };
+    }   
+
     /**
      * Creates a field mapping and a reversed mapping for output/input key translation.
      */
-    async createFieldMapping(mapping) {
+    async createFieldMapping(objectType, mapping) {
         console.log('[daquota proxy] creating mapping', mapping);
 
         if (!this.sessionInfo.mappings) this.sessionInfo.mappings = {};
-        this.sessionInfo.mappings.fieldMapping = this._normalizeMapping(mapping);
+        if (!this.sessionInfo.mappings.fieldMapping) this.sessionInfo.mappings.fieldMapping = {};
+        if (!this.sessionInfo.mappings.fieldMappingReversed) this.sessionInfo.mappings.fieldMappingReversed = {};
+        this.sessionInfo.mappings.fieldMapping[objectType] = this._normalizeMapping(mapping);
 
-        this.sessionInfo.mappings.fieldMappingReversed = this._normalizeMapping(Object.fromEntries(
+        this.sessionInfo.mappings.fieldMappingReversed[objectType] = this._normalizeMapping(Object.fromEntries(
             Object.entries(mapping).map(([k, v]) => [v, k])
         ));
         console.log('[daquota proxy] field mapping', this.sessionInfo.mappings.fieldMapping);
@@ -99,24 +114,24 @@ export class BaseConnector {
         return { success: true };
     }
 
-    normalizeInputData(data, context = []) {
+    normalizeInputData(objectType, data, context = []) {
         //console.log('[daquota proxy] normalizeInputData', data, context);
         if (Array.isArray(data)) {
-            return data.map(d => this.normalizeInputData(d));
+            return data.map(d => this.normalizeInputData(objectType, d));
         } else if (data && typeof data === 'object') {
             const result = {};
             const mapping = this.sessionInfo.mappings?.fieldMappingReversed;
             for (let [key, value] of Object.entries(data)) {
                 const fullKey = [...context, key].join('.');
                 //console.log('[daquota proxy] normalizeInputData, key, fullkey', key, fullKey, value);
-                const mappedKey = this.normalizeInputKey(fullKey);
+                const mappedKey = this.normalizeInputKey(objectType, fullKey);
                 if (mapping[fullKey + '$$conf'] && mapping[fullKey + '$$conf'].readonly) {
                     continue;
                 }
                 if (Array.isArray(mappedKey) && typeof value === 'object') {
                     // case of compound object
                     context.push(key);
-                    const normalizedObect = this.normalizeInputData(value, context);
+                    const normalizedObject = this.normalizeInputData(objectType, value, context);
                     context.pop();
                     Object.assign(result, normalizedObect);
                     continue;
@@ -141,14 +156,14 @@ export class BaseConnector {
         return data;
     }
 
-    normalizeOutputData(data) {
+    normalizeOutputData(objectType, data) {
         if (Array.isArray(data)) {
-            return data.map(d => this.normalizeOutputData(d));
+            return data.map(d => this.normalizeOutputData(objectType, d));
         } else if (data && typeof data === 'object') {
             const result = {};
             const mapping = this.sessionInfo.mappings?.fieldMapping;
             for (let [key, value] of Object.entries(data)) {
-                const mappedKey = this.normalizeOutputKey(key);
+                const mappedKey = this.normalizeOutputKey(objectType, key);
                 if (mapping && mapping[key + '$$index']) {
                     value = value[mapping[key + '$$index']];
                 }
@@ -169,20 +184,44 @@ export class BaseConnector {
         return data;
     }
 
-    normalizeInputKey(key) {
-        const reversed = this.sessionInfo.mappings?.fieldMappingReversed;
+    getFieldMapping(objectType) {
+        return {
+            ...this.sessionInfo.mappings?.fieldMapping.$global,
+            ...this.sessionInfo.mappings?.fieldMapping[objectType]
+        }
+    }
+
+    getFieldMappingReversed(objectType) {
+        return {
+            ...this.sessionInfo.mappings?.fieldMappingReversed.$global,
+            ...this.sessionInfo.mappings?.fieldMappingReversed[objectType]
+        }
+    }
+
+    normalizeInputKey(objectType, key) {
+        const reversed = this.getFieldMappingReversed(objectType);
         return reversed?.[key] || key;
     }
 
-    normalizeOutputKey(key) {
-        const mapping = this.sessionInfo.mappings?.fieldMapping;
+    normalizeOutputKey(objectType, key) {
+        const mapping = this.getFieldMapping(objectType);
         return mapping?.[key] || key;
     }
 
-    normalizeInputFieldNames(fields) {
+    normalizeInputObjectType(objectType) {
+        const reversed = this.sessionInfo.mappings?.objectTypeMappingReversed;
+        return reversed?.[objectType] || objectType;
+    }
+
+    normalizeOutputObjectType(objectType) {
+        const mapping = this.sessionInfo.mappings?.objectTypeMapping;
+        return mapping?.[objectType] || objectType;
+    }
+
+    normalizeInputFieldNames(objectType, fields) {
         if (fields == null) return fields;
         return fields.reduce((normalized, f) => {
-            const normalizedKey = this.normalizeInputKey(f);
+            const normalizedKey = this.normalizeInputKey(objectType, f);
             if (Array.isArray(normalizedKey)) {
                 normalized.push(...normalizedKey);
             } else {
@@ -192,18 +231,18 @@ export class BaseConnector {
         }, []);
     }
 
-    processFields(objectName, fields) {
+    processFields(objectType, fields) {
         const processedFields = [];
         const compoundTypes = new Set();
         fields.forEach(field => {
-            const mappedFieldName = this.normalizeOutputKey(field.name);
+            const mappedFieldName = this.normalizeOutputKey(objectType, field.name);
             if (!mappedFieldName.includes('.')) {
                 field.name = mappedFieldName;
                 if (field.relationshipName) {
                     field.relationshipName = mappedFieldName;
                 }
                 processedFields.push(field);
-                console.log('[daquota proxy] add field', objectName, field.name);
+                console.log('[daquota proxy] add field', objectType, field.name);
             } else {
                 const compoundType = mappedFieldName.split('.')[0];
                 if (!compoundTypes.has(compoundType)) {
@@ -214,7 +253,7 @@ export class BaseConnector {
                         field.type = 'address';
                     }
                     processedFields.push(field);
-                    console.log('[daquota proxy] add field', objectName, field.name);
+                    console.log('[daquota proxy] add field', objectType, field.name);
                 }
             }
         });

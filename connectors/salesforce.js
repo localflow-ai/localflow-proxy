@@ -340,7 +340,7 @@ export class SalesforceConnector extends BaseConnector {
           .on('end', () => {
             console.log(`[daquota proxy] total in database: ${query.totalSize}`);
             console.log(`[daquota proxy] total fetched: ${query.totalFetched}`);
-            resolve(records);
+            resolve({ records, totalSize: query.totalSize, totalFetched: query.totalFetched });
           })
           .on('error', (err) => {
             console.error('[daquota proxy] error querying ' + this.objectType, err);

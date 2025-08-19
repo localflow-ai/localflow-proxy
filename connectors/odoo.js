@@ -51,9 +51,9 @@ export class OdooConnector extends BaseConnector {
     // });
   }
 
-  async execute_kw(model, method, args = [], kwargs = {}) {
+  async execute_kw(model, method, args = []) {
     return new Promise((resolve, reject) => {
-      this.odoo.execute_kw(model, method, [args, kwargs], (err, value) => {
+      this.odoo.execute_kw(model, method, args, (err, value) => {
         if (err) return reject(err);
         resolve(value);
       });
@@ -66,20 +66,20 @@ export class OdooConnector extends BaseConnector {
       const context = {
         configuration: {
           userObject: 'res.users',
-          userFields: ['id', 'name', 'email', 'login', 'active'].map(f => this.normalizeOutputKey(f)),
-          userWhere: { [this.normalizeOutputKey('active')]: true },
-          userNameField: this.normalizeOutputKey('login'),
-          idField: this.normalizeOutputKey('id')
+          userFields: ['id', 'name', 'email', 'login', 'active'].map(f => this.normalizeOutputKey('res.users', f)),
+          userWhere: { [this.normalizeOutputKey('res.users', 'active')]: true },
+          userNameField: this.normalizeOutputKey('res.users', 'login'),
+          idField: this.normalizeOutputKey('res.users', 'id')
         }
       };
       if (this.sessionInfo.userId) {
-        const [user] = await this.execute_kw('res.users', 'read', [[this.sessionInfo.userId], ['id', 'name', 'email', 'login', 'groups_id']]);
+        const [user] = await this.execute_kw('res.users', 'read', [[[this.sessionInfo.userId], ['id', 'name', 'email', 'login', 'groups_id']]]);
         console.log('[OdooConnector] user', user);
         //const [groupSystemRef] = await this.execute_kw('ir.model.data', 'get_object_reference', [['group_system']]);
         //const groupSystemRef = await this.execute_kw('res.groups', 'search_read', [[['name', '=', 'group_system']], ['id']]);
         //console.log('[OdooConnector] groupSystemRef', groupSystemRef);
 
-        const groups = await this.execute_kw('res.groups', 'read', [user.groups_id, ['id', 'name', 'category_id']]);
+        const groups = await this.execute_kw('res.groups', 'read', [[user.groups_id, ['id', 'name', 'category_id']]]);
         console.log('[OdooConnector] groups', groups);
 
         context.user = {
@@ -126,7 +126,8 @@ export class OdooConnector extends BaseConnector {
         !objectType.includes('.test')
       );
       return {
-        name: m.model, // technical name
+        name: this.normalizeOutputObjectType(m.model), // technical name
+        orgName: m.name,
         label: m.name,
         labelPlural: m.name + 's',
         keyPrefix: '',     // Odoo doesn't use this — placeholder
@@ -150,6 +151,7 @@ export class OdooConnector extends BaseConnector {
     //   );
     // });
     // Get fields
+    objectType = this.normalizeInputObjectType(objectType);
     const fieldParams = [[['model', '=', objectType]]];
     const fields = await new Promise((resolve, reject) => {
       this.odoo.execute_kw('ir.model.fields', 'search_read', [fieldParams], (err, result) => {
@@ -193,7 +195,7 @@ export class OdooConnector extends BaseConnector {
         length: field.size || 255,
         updateable: this.isFieldWritable(field),
         createable: this.isFieldWritable(field),
-        referenceTo: field.relation ? [field.relation] : []
+        referenceTo: field.relation ? [this.normalizeOutputObjectType(field.relation)] : []
       })))
     };
   }
@@ -220,7 +222,7 @@ export class OdooConnector extends BaseConnector {
       !['id', 'create_uid', 'create_date', 'write_uid', 'write_date'].includes(field.name);
   }
 
-  async buildOdooDomain(where) {
+  async buildOdooDomain(objectType, where) {
     if (!where || typeof where !== 'object') return [];
 
     const domain = [];
@@ -234,13 +236,13 @@ export class OdooConnector extends BaseConnector {
         for (let i = 1; i < parts.length; i++) domain.unshift('|');
         domain.push(...parts);
       } else if (key === '$not') {
-        const negated = await this.buildOdooDomain(value);
+        const negated = await this.buildOdooDomain(objectType, value);
         for (const cond of negated) {
           domain.push(['!', cond]);
         }
       } else if (typeof value === 'object' && value !== null) {
         const [operator, operand] = Object.entries(value)[0];
-        key = this.normalizeInputKey(key);
+        key = this.normalizeInputKey(objectType, key);
 
         switch (operator) {
           case '$like':
@@ -260,7 +262,7 @@ export class OdooConnector extends BaseConnector {
               domain.push([key, 'in', operand]);
             } else if (operand?.$select) {
               const { model, field, where: subWhere } = operand.$select;
-              const subDomain = await this.buildOdooDomain(subWhere);
+              const subDomain = await this.buildOdooDomain(objectType, subWhere);
               const ids = await new Promise((resolve, reject) => {
                 this.odoo.execute_kw(model, 'search_read', [subDomain, [field]], (err, result) => {
                   if (err) return reject(err);
@@ -313,32 +315,66 @@ export class OdooConnector extends BaseConnector {
    */
   async getData(objectType, { fields, where, limit, order } = {}) {
     console.log('getData', objectType, fields, where, limit, order);
+    objectType = this.normalizeInputObjectType(objectType);
 
     const orderString = order
       ? Object.entries(order)
-        .map(([field, dir]) => `${this.normalizeInputKey(field)} ${dir.toUpperCase() === 'DESC' ? 'desc' : 'asc'}`)
+        .map(([field, dir]) => `${this.normalizeInputKey(objectType, field)} ${dir.toUpperCase() === 'DESC' ? 'desc' : 'asc'}`)
         .join(', ')
       : undefined;
 
-    const inParams = [await this.buildOdooDomain(where), this.normalizeInputFieldNames(fields), 0, limit || 2000];
+    const relatedFields = fields?.filter(f => f.includes('.')) || [];
+    fields = fields?.filter(f => !f.includes('.'));
+
+    const inParams = [await this.buildOdooDomain(objectType, where), this.normalizeInputFieldNames(objectType, fields), 0, limit || 2000];
     if (orderString) inParams.push(orderString);
 
     console.log('inParams', inParams);
 
-    return new Promise((resolve, reject) => {
-      this.odoo.execute_kw(
+    const result = await this.execute_kw(
         objectType,
         'search_read',
-        [inParams],
-        (err, result) => {
-          if (err) return reject(err);
-          resolve(this.normalizeOutputData(result));
-        }
-      );
-    });
+        [inParams]
+    );
+
+    if (relatedFields.length) {
+      const relationNames = Array.from(new Set(relatedFields.map(f => f.split('.')[0])));
+      console.log('[OdooConnector] relationNames', relationNames);
+      const relations = await this.execute_kw('ir.model.fields', 'search_read', [[
+        [['model', '=', objectType], ['name', 'in', relationNames]], 
+        ['name', 'relation']
+      ]]);
+      console.log('[OdooConnector] relations', relations);
+      for (const relationName of relationNames) {
+        const relation = relations.find(r => r.name === relationName);
+        if (!relation) continue;
+        const relatedObjectType = relation.relation;
+        if (!relatedObjectType) continue;
+        const fieldsToFetch = Array.from(new Set(relatedFields.filter(f => f.startsWith(relationName + '.')).map(f => f.split('.')[1])))
+          .map(f => this.normalizeInputKey(relatedObjectType, f));
+        const recordsWithRelation = result.filter(r => r[relationName]);
+        const ids = recordsWithRelation.map(r => r[relationName][0]);
+        console.log('[OdooConnector] fieldsToFetch', fieldsToFetch);
+        console.log('[OdooConnector] ids', ids);
+        const relatedResult = await this.execute_kw(
+          relatedObjectType,
+          'read', [[ids, fieldsToFetch]]
+        );
+        console.log('[OdooConnector] relatedResult', relatedResult);
+        recordsWithRelation.forEach((r, i) => {
+          Object.assign(r, { 
+            [relationName]: this.normalizeOutputData(relatedObjectType, { id: ids[i], ...relatedResult[i] }) 
+          });
+        });
+      }
+    }
+
+    console.log('[OdooConnector] result', result);
+    return { records: this.normalizeOutputData(objectType, result), totalSize: undefined, totalFetched: result.length };
   }
 
   async getRecordById(objectType, id, fields = null) {
+    objectType = this.normalizeInputObjectType(objectType);
     const parsedId = parseInt(id, 10);
     return new Promise((resolve, reject) => {
       this.odoo.execute_kw(
@@ -347,16 +383,17 @@ export class OdooConnector extends BaseConnector {
         [[parsedId], { fields }],
         (err, result) => {
           if (err) return reject(err);
-          resolve(this.normalizeOutputData(result[0]));
+          resolve(this.normalizeOutputData(objectType, result[0]));
         }
       );
     });
   }
 
   async createRecord(objectType, data) {
+    objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
       console.log('createRecord', objectType, data);
-      const inParams = [this.normalizeInputData(data)];
+      const inParams = [this.normalizeInputData(objectType, data)];
       console.log('createRecord', inParams);
       this.odoo.execute_kw(objectType, 'create', [inParams], (err, id) => {
         if (err) return reject(err);
@@ -366,9 +403,10 @@ export class OdooConnector extends BaseConnector {
   }
 
   async updateData(objectType, id, data) {
+    objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
       console.log('updateData', objectType, id, data);
-      const inParams = [[parseInt(id)], this.normalizeInputData(data)];
+      const inParams = [[parseInt(id)], this.normalizeInputData(objectType, data)];
       console.log('updateData', inParams);
       this.odoo.execute_kw(objectType, 'write', [inParams], (err, result) => {
         if (err) return reject(err);
@@ -378,6 +416,7 @@ export class OdooConnector extends BaseConnector {
   }
 
   async deleteData(objectType, id) {
+    objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
       this.odoo.execute_kw(objectType, 'unlink', [[[parseInt(id)]]], (err, result) => {
         if (err) return reject(err);
@@ -387,6 +426,7 @@ export class OdooConnector extends BaseConnector {
   }
 
   async getAttachments(objectType, objectId, mimeTypePrefix = '') {
+    objectType = this.normalizeInputObjectType(objectType);
     const domain = [['res_model', '=', objectType], ['res_id', '=', parseInt(objectId)]];
     if (mimeTypePrefix) {
       domain.push(['mimetype', 'ilike', mimeTypePrefix]);
