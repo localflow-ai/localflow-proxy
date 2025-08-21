@@ -197,7 +197,7 @@ export class SalesforceConnector extends BaseConnector {
 
     const parts = [];
 
-    for (const key in where) {
+    for (let key in where) {
       const value = where[key];
 
       if (key === '$or' && Array.isArray(value)) {
@@ -208,7 +208,7 @@ export class SalesforceConnector extends BaseConnector {
         if (notPart) parts.push(`NOT (${notPart})`);
       } else if (typeof value === 'object' && value !== null) {
         const [operator, operand] = Object.entries(value)[0];
-
+        key = this.normalizeInputKey(objectType, key);
         switch (operator) {
           case '$like':
             parts.push(`${key} LIKE '${operand}'`);
@@ -242,6 +242,7 @@ export class SalesforceConnector extends BaseConnector {
             throw new Error(`Unsupported operator: ${operator}`);
         }
       } else {
+        key = this.normalizeInputKey(objectType, key);
         if (value === null) {
           parts.push(`${key} = NULL`);
         } else {
