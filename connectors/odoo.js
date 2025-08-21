@@ -138,20 +138,8 @@ export class OdooConnector extends BaseConnector {
   }
 
   async getObjectMetadata(objectType) {
-    // const fields = await new promise((resolve, reject) => {
-    //   this.odoo.execute_kw(
-    //     objecttype,
-    //     'fields_get',
-    //     [[]],
-    //     (err, result) => {
-    //       if (err) return reject(err);
-    //       console.info('fields_get result', result);
-    //       resolve(result);
-    //     }
-    //   );
-    // });
-    // Get fields
     objectType = this.normalizeInputObjectType(objectType);
+    // Get fields
     const fieldParams = [[['model', '=', objectType]]];
     const fields = await new Promise((resolve, reject) => {
       this.odoo.execute_kw('ir.model.fields', 'search_read', [fieldParams], (err, result) => {
