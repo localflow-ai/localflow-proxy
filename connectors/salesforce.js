@@ -161,7 +161,7 @@ export class SalesforceConnector extends BaseConnector {
   async listObjectTypes() {
     const result = await this.conn.describeGlobal();
     return result.sobjects.map(obj => ({
-      name: obj.name,
+      name: this.normalizeOutputObjectType(obj.name),
       label: obj.label,
       labelPlural: obj.labelPlural,
       keyPrefix: obj.keyPrefix,
@@ -173,66 +173,26 @@ export class SalesforceConnector extends BaseConnector {
   }
 
   async getObjectMetadata(objectType) {
+    objectType = this.normalizeInputObjectType(objectType);
     const result = await this.conn.sobject(objectType).describe();
     return {
       name: result.name,
-      fields: result.fields.map(field => ({
+      fields: this.processFields(objectType, result.fields.map(field => ({
         name: field.name,
         label: field.label,
         type: field.type,
-        referenceTo: field.referenceTo,
+        referenceTo: this.normalizeOutputObjectType(field.referenceTo),
         relationshipName: field.relationshipName,
         required: field.nillable === false,
         length: field.length || 255,
         calculated: field.calculated,
         createable: field.createable,
         updateable: field.updateable,
-      }))
+      })))
     };
   }
 
-  // buildSOQLWhere(where) {
-  //   if (!where || typeof where !== 'object') return '';
-
-  //   const parts = [];
-
-  //   for (const key in where) {
-  //     const value = where[key];
-
-  //     if (key === '$or' && Array.isArray(value)) {
-  //       const orParts = value.map(buildSOQLWhere).filter(Boolean);
-  //       parts.push(`(${orParts.join(' OR ')})`);
-  //     } else if (key === '$not') {
-  //       const notPart = buildSOQLWhere(value);
-  //       if (notPart) parts.push(`NOT (${notPart})`);
-  //     } else if (typeof value === 'object' && value !== null) {
-  //       const [operator, operand] = Object.entries(value)[0];
-  //       switch (operator) {
-  //         case '$like':
-  //           parts.push(`${key} LIKE '${operand}'`);
-  //           break;
-  //         case '$neq':
-  //           parts.push(`${key} != '${operand}'`);
-  //           break;
-  //         case '$gt':
-  //           parts.push(`${key} > '${operand}'`);
-  //           break;
-  //         case '$lt':
-  //           parts.push(`${key} < '${operand}'`);
-  //           break;
-  //         default:
-  //           throw new Error(`Unsupported operator: ${operator}`);
-  //       }
-  //     } else {
-  //       const val = typeof value === 'boolean' ? value : `'${value}'`;
-  //       parts.push(`${key} = ${val}`);
-  //     }
-  //   }
-
-  //   return parts.join(' AND ');
-  // }
-
-  async buildSOQLWhere(where) {
+  async buildSOQLWhere(objectType, where) {
     if (!where || typeof where !== 'object') return '';
 
     const parts = [];
@@ -241,10 +201,10 @@ export class SalesforceConnector extends BaseConnector {
       const value = where[key];
 
       if (key === '$or' && Array.isArray(value)) {
-        const orParts = await Promise.all(value.map(w => this.buildSOQLWhere(w)));
+        const orParts = await Promise.all(value.map(w => this.buildSOQLWhere(objectType, w)));
         parts.push(`(${orParts.filter(Boolean).join(' OR ')})`);
       } else if (key === '$not') {
-        const notPart = await this.buildSOQLWhere(value);
+        const notPart = await this.buildSOQLWhere(objectType, value);
         if (notPart) parts.push(`NOT (${notPart})`);
       } else if (typeof value === 'object' && value !== null) {
         const [operator, operand] = Object.entries(value)[0];
@@ -271,7 +231,7 @@ export class SalesforceConnector extends BaseConnector {
               parts.push(`${key} IN (${inList})`);
             } else if (typeof operand === 'object' && operand.$select) {
               const { from, field, where: subWhere } = operand.$select;
-              const subWhereClause = await this.buildSOQLWhere(subWhere);
+              const subWhereClause = await this.buildSOQLWhere(objectType, subWhere);
               const subQuery = `SELECT ${field} FROM ${from}${subWhereClause ? ` WHERE ${subWhereClause}` : ''}`;
               parts.push(`${key} IN (${subQuery})`);
             } else {
@@ -317,15 +277,16 @@ export class SalesforceConnector extends BaseConnector {
    * @returns {Promise<Array<Object>>} - The list of records
    */
   async getData(objectType, { fields, where, limit, order } = {}) {
-    const queryFields = fields ? fields.join(', ') : 'Id';
+    objectType = this.normalizeInputObjectType(objectType);
+    const queryFields = fields ? this.normalizeInputFieldNames(objectType, fields).join(', ') : 'Id';
     const directionClause = order
       ? `ORDER BY ${Object.entries(order)
-        .map(([field, dir]) => `${field} ${dir.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'}`)
+        .map(([field, dir]) => `${this.normalizeInputKey(objectType, field)} ${dir.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'}`)
         .join(', ')}`
       : '';
 
     const soql = `SELECT ${queryFields} FROM ${objectType} 
-      ${where ? `WHERE ${await this.buildSOQLWhere(where)}` : ''} 
+      ${where ? `WHERE ${await this.buildSOQLWhere(objectType, where)}` : ''} 
       ${directionClause} 
       ${limit ? `LIMIT ${limit}` : ''} 
     `;
@@ -340,7 +301,7 @@ export class SalesforceConnector extends BaseConnector {
           .on('end', () => {
             console.log(`[daquota proxy] total in database: ${query.totalSize}`);
             console.log(`[daquota proxy] total fetched: ${query.totalFetched}`);
-            resolve({ records, totalSize: query.totalSize, totalFetched: query.totalFetched });
+            resolve({ records: this.normalizeOutputData(objectType, records), totalSize: query.totalSize, totalFetched: query.totalFetched });
           })
           .on('error', (err) => {
             console.error('[daquota proxy] error querying ' + this.objectType, err);
@@ -356,12 +317,15 @@ export class SalesforceConnector extends BaseConnector {
   }
 
   async getRecordById(objectType, id, fields) {
-    return this.conn.sobject(objectType).retrieve(id, fields);
+    objectType = this.normalizeInputObjectType(objectType);
+    let result = await this.conn.sobject(objectType).retrieve(id, fields);
+    return this.normalizeOutputData(objectType, result);
   }
 
   async createRecord(objectType, data) {
+    objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
-      this.conn.sobject(objectType).create(data, (err, result) => {
+      this.conn.sobject(objectType).create(this.normalizeInputData(objectType, data), (err, result) => {
         if (err || !result.success) return reject(err || new Error('Failed to create record'));
         resolve(result);
       });
@@ -369,10 +333,12 @@ export class SalesforceConnector extends BaseConnector {
   }
 
   async updateData(objectType, id, data) {
-    return this.conn.sobject(objectType).update({ Id: id, ...data });
+    objectType = this.normalizeInputObjectType(objectType);
+    return this.conn.sobject(objectType).update(this.normalizeInputData(objectType, { Id: id, ...data }));
   }
 
   async deleteData(objectType, id) {
+    objectType = this.normalizeInputObjectType(objectType);
     return this.conn.sobject(objectType).destroy(id);
   }
 
