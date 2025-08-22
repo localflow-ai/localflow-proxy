@@ -177,9 +177,16 @@ export class SalesforceConnector extends BaseConnector {
     const result = await this.conn.sobject(objectType).describe();
     return {
       name: result.name,
+      label: result.label,
+      labelPlural: result.labelPlural,
+      custom: result.custom,
+      layoutable: result.layoutable,
+      updateable: result.updateable,
+      createable: result.createable,
       fields: this.processFields(objectType, result.fields.map(field => ({
         name: field.name,
         label: field.label,
+        labelPlural: field.labelPlural,
         type: field.type,
         referenceTo: this.normalizeOutputObjectType(field.referenceTo),
         relationshipName: field.relationshipName,

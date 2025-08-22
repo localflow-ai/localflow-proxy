@@ -173,6 +173,8 @@ export class OdooConnector extends BaseConnector {
       ...modelInfo,
       name: objectType,
       layoutable,
+      label: modelInfo ? (modelInfo.name || objectType) : objectType,
+      labelPlural: modelInfo ? (modelInfo.name + 's' || objectType + 's') : objectType + 's',
       fields: this.processFields(objectType, fields.map((field) => ({
         ...field,
         name: field.name,
