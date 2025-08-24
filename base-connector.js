@@ -136,7 +136,7 @@ export class BaseConnector {
                     context.push(key);
                     const normalizedObject = this.normalizeInputData(objectType, value, context);
                     context.pop();
-                    Object.assign(result, normalizedObect);
+                    Object.assign(result, normalizedObject);
                     continue;
                 }
                 if (mapping && mapping[key + '$$index']) {
