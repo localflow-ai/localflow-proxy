@@ -121,6 +121,9 @@ export class BaseConnector {
         } else if (data && typeof data === 'object') {
             const result = {};
             const mapping = this.sessionInfo.mappings?.fieldMappingReversed;
+            if (!mapping) {
+                return data;
+            } 
             for (let [key, value] of Object.entries(data)) {
                 const fullKey = [...context, key].join('.');
                 //console.log('[daquota proxy] normalizeInputData, key, fullkey', key, fullKey, value);
@@ -162,6 +165,9 @@ export class BaseConnector {
         } else if (data && typeof data === 'object') {
             const result = {};
             const mapping = this.sessionInfo.mappings?.fieldMapping;
+            if (!mapping) {
+                return data;
+            } 
             for (let [key, value] of Object.entries(data)) {
                 const mappedKey = this.normalizeOutputKey(objectType, key);
                 if (mapping && mapping[key + '$$index']) {
@@ -237,12 +243,11 @@ export class BaseConnector {
         fields.forEach(field => {
             const mappedFieldName = this.normalizeOutputKey(objectType, field.name);
             if (!mappedFieldName.includes('.')) {
-                field.name = mappedFieldName;
-                if (field.relationshipName) {
+                if (field.name === field.relationshipName) {
                     field.relationshipName = mappedFieldName;
                 }
+                field.name = mappedFieldName;
                 processedFields.push(field);
-                console.log('[daquota proxy] add field', objectType, field.name);
             } else {
                 const compoundType = mappedFieldName.split('.')[0];
                 if (!compoundTypes.has(compoundType)) {
@@ -253,7 +258,6 @@ export class BaseConnector {
                         field.type = 'address';
                     }
                     processedFields.push(field);
-                    console.log('[daquota proxy] add field', objectType, field.name);
                 }
             }
         });
