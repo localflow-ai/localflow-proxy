@@ -181,6 +181,7 @@ export class OdooConnector extends BaseConnector {
         relationshipName: field.name,
         label: field.field_description,
         type: this.normalizeOdooType(field.ttype),
+        picklistValues: field.selection.map(([value, label]) => ({ value, label })),
         required: field.required,
         length: field.size || 255,
         updateable: this.isFieldWritable(field),

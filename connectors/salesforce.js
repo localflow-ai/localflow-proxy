@@ -190,6 +190,7 @@ export class SalesforceConnector extends BaseConnector {
         type: field.type,
         referenceTo: this.normalizeOutputObjectType(field.referenceTo),
         relationshipName: field.relationshipName,
+        picklistValues: field.picklistValues,
         required: field.nillable === false,
         length: field.length || 255,
         calculated: field.calculated,
