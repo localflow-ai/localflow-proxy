@@ -333,12 +333,13 @@ export class SalesforceConnector extends BaseConnector {
 
   async createRecord(objectType, data) {
     objectType = this.normalizeInputObjectType(objectType);
-    return new Promise((resolve, reject) => {
-      this.conn.sobject(objectType).create(this.normalizeInputData(objectType, data), (err, result) => {
-        if (err || !result.success) return reject(err || new Error('Failed to create record'));
-        resolve(result);
-      });
-    });
+    return this.conn.sobject(objectType).create(this.normalizeInputData(objectType, data));
+    // return new Promise((resolve, reject) => {
+    //   this.conn.sobject(objectType).create(this.normalizeInputData(objectType, data), (err, result) => {
+    //     if (err || !result.success) return reject(err || new Error('Failed to create record'));
+    //     resolve(result);
+    //   });
+    // });
   }
 
   async updateData(objectType, id, data) {

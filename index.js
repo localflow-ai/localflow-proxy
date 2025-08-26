@@ -18,11 +18,12 @@ const connectorMap = {
 };
 
 const asyncHandler = fn => (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch(err => {
-        console.error('[daquota proxy] internal error', err);
-        res.status(500).json({ error: err.message || 'Internal server error' });
-        next(err);
-    });
+    Promise.resolve(fn(req, res, next)).catch(next);
+    // Promise.resolve(fn(req, res, next)).catch(err => {
+    //     console.error('[daquota proxy] internal error', err);
+    //     res.status(500).json({ error: err.message || 'Internal server error' });
+    //     next(err);
+    // });
 };
 
 // app.use((err, req, res, next) => {
@@ -124,12 +125,12 @@ app.post('/data/:objectType', asyncHandler(async (req, res) => {
 
 app.put('/data/:objectType/:id', asyncHandler(async (req, res) => {
     const result = await req.session.connector.updateData(req.params.objectType, req.params.id, req.body);
-    res.json({ success: true, result });
+    res.json(result);
 }));
 
 app.delete('/data/:objectType/:id', asyncHandler(async (req, res) => {
     const result = await req.session.connector.deleteData(req.params.objectType, req.params.id);
-    res.json({ success: true, result });
+    res.json(result);
 }));
 
 app.get('/attachments/:objectType/:id', asyncHandler(async (req, res) => {
@@ -146,6 +147,33 @@ app.post('/api/send-email', asyncHandler(async (req, res) => {
     const result = await req.session.connector.sendEmail({ toAddresses, subject, body, from });
     res.json({ success: true, result });
 }));
+
+app.use((err, req, res, next) => {
+  console.error('[daquota proxy] internal error', err);
+
+  // Salesforce (jsforce) errors often have `errorCode` and `message`
+  if (err.errorCode) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: err.errorCode,
+        message: err.message,
+        fields: err.fields || []
+      }
+    });
+  }
+
+  // Generic error fallback
+  if (!res.headersSent) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: err.message || 'Internal server error'
+      }
+    });
+  }
+});
 
 app.listen(PORT, () => {
     console.log(`API Proxy running at http://localhost:${PORT}`);

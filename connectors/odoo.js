@@ -387,6 +387,7 @@ export class OdooConnector extends BaseConnector {
       const inParams = [this.normalizeInputData(objectType, data)];
       console.log('createRecord', inParams);
       this.odoo.execute_kw(objectType, 'create', [inParams], (err, id) => {
+        // TODO: check if it is the right contract
         if (err) return reject(err);
         resolve({ id });
       });
@@ -400,8 +401,8 @@ export class OdooConnector extends BaseConnector {
       const inParams = [[parseInt(id)], this.normalizeInputData(objectType, data)];
       console.log('updateData', inParams);
       this.odoo.execute_kw(objectType, 'write', [inParams], (err, result) => {
-        if (err) return reject(err);
-        resolve(result);
+        if (err) return reject({ success: false, error: err });
+        resolve({ success: true, result });
       });
     });
   }
@@ -410,8 +411,8 @@ export class OdooConnector extends BaseConnector {
     objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
       this.odoo.execute_kw(objectType, 'unlink', [[[parseInt(id)]]], (err, result) => {
-        if (err) return reject(err);
-        resolve(result);
+        if (err) return reject({ success: false, error: err });
+        resolve({ success: true, result });
       });
     });
   }
