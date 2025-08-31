@@ -1,14 +1,14 @@
-import crypto from 'crypto';
+const crypto = require('crypto');
 
 const sessions = new Map();
 
-export function createSession(type, connector) {
+function createSession(type, connector) {
     const token = crypto.randomUUID();
     sessions.set(token, { type, connector });
     return token;
 }
 
-export function getSession(token, req) {
+function getSession(token, req) {
     const host = req.headers.host;
     if ((host.startsWith('localhost') || host.startsWith('127.0.0.1')) && token === "1234567890") {
         return sessions.values().next().value;
@@ -16,6 +16,12 @@ export function getSession(token, req) {
     return sessions.get(token);
 }
 
-export function deleteSession(token) {
+function deleteSession(token) {
     sessions.delete(token);
 }
+
+module.exports = {
+    createSession,
+    getSession,
+    deleteSession
+};

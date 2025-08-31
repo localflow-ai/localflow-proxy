@@ -1,4 +1,4 @@
-export class BaseConnector {
+class BaseConnector {
     constructor() {
     }
 
@@ -264,3 +264,5 @@ export class BaseConnector {
         return processedFields;
     }
 }
+
+module.exports = { BaseConnector };

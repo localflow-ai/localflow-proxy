@@ -1,7 +1,13 @@
-import jsforce from 'jsforce';
-import crypto from 'crypto';
-import fetch from 'node-fetch'
-import { BaseConnector } from '../base-connector.js';
+// import jsforce from 'jsforce';
+// import crypto from 'crypto';
+// import fetch from 'node-fetch'
+// import { BaseConnector } from '../base-connector.js';
+const jsforce = require('jsforce');
+const crypto = require('crypto');
+//const fetch = require('node-fetch');
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const { BaseConnector } = require('../base-connector.js');
 
 const mimeMap = {
   'jpg': 'image/jpeg',
@@ -28,7 +34,7 @@ function decodeBase64UrlSafe(str) {
   return Buffer.from(str + padding, 'base64').toString('utf8');
 }
 
-export class SalesforceConnector extends BaseConnector {
+class SalesforceConnector extends BaseConnector {
   constructor() {
     super();
     this.conn = null;
@@ -427,3 +433,5 @@ export class SalesforceConnector extends BaseConnector {
   }
 
 }
+
+module.exports = { SalesforceConnector };

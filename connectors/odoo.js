@@ -1,8 +1,12 @@
-import Odoo from 'odoo-xmlrpc';
-import { BaseConnector } from '../base-connector.js';
-import xmlrpc from 'xmlrpc';
+// import Odoo from 'odoo-xmlrpc';
+// import { BaseConnector } from '../base-connector.js';
+// import xmlrpc from 'xmlrpc';
 
-export class OdooConnector extends BaseConnector {
+const Odoo = require('odoo-xmlrpc');
+const { BaseConnector } = require('../base-connector.js');
+const xmlrpc = require('xmlrpc');
+
+class OdooConnector extends BaseConnector {
   constructor() {
     super();
     this.odoo = null;
@@ -452,3 +456,5 @@ export class OdooConnector extends BaseConnector {
   }
 
 }
+
+module.exports = { OdooConnector };
