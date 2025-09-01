@@ -1,25 +1,14 @@
-// import Odoo from 'odoo-xmlrpc';
-// import { BaseConnector } from '../base-connector.js';
-// import xmlrpc from 'xmlrpc';
-
 const Odoo = require('odoo-xmlrpc');
 const { BaseConnector } = require('../base-connector.js');
 const xmlrpc = require('xmlrpc');
 
+/**
+ * Odoo Connector for interacting with Odoo API. BaseConnector defines some common functionality for all connectors, espacially mapping and normalization.
+ */
 class OdooConnector extends BaseConnector {
   constructor() {
     super();
     this.odoo = null;
-    // this.inputKeyMap = {
-    //   'Id': 'id',
-    //   'Name': 'name',
-    //   'Email': 'email',
-    // };
-    // this.outputKeyMap = {
-    //   'id': 'Id',
-    //   'name': 'Name',
-    //   'email': 'Email',
-    // };
   }
 
   async login({ url, db, username, password }) {
@@ -44,15 +33,6 @@ class OdooConnector extends BaseConnector {
 
       });
     });
-
-    // this.odoo.authenticate(db, username, password, (err, uid) => {
-    //   if (err) return reject(err);
-
-    //   console.log('[OdooConnector] connected to Odoo', uid);
-    //   this.sessionInfo.userId = uid;
-    //   this.odoo.uid = uid; // store in instance if needed
-    //   resolve();
-    // });
   }
 
   async execute_kw(model, method, args = []) {
@@ -79,9 +59,6 @@ class OdooConnector extends BaseConnector {
       if (this.sessionInfo.userId) {
         const [user] = await this.execute_kw('res.users', 'read', [[[this.sessionInfo.userId], ['id', 'name', 'email', 'login', 'groups_id']]]);
         console.log('[OdooConnector] user', user);
-        //const [groupSystemRef] = await this.execute_kw('ir.model.data', 'get_object_reference', [['group_system']]);
-        //const groupSystemRef = await this.execute_kw('res.groups', 'search_read', [[['name', '=', 'group_system']], ['id']]);
-        //console.log('[OdooConnector] groupSystemRef', groupSystemRef);
 
         const groups = await this.execute_kw('res.groups', 'read', [[user.groups_id, ['id', 'name', 'category_id']]]);
         console.log('[OdooConnector] groups', groups);
