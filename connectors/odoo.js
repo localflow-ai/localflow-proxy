@@ -1,6 +1,9 @@
 const Odoo = require('odoo-xmlrpc');
 const { BaseConnector } = require('../base-connector.js');
 const xmlrpc = require('xmlrpc');
+const { getLogger } = require('../logging');
+
+const logger = getLogger('odoo-connector');
 
 /**
  * Odoo Connector for interacting with Odoo API. BaseConnector defines some common functionality for all connectors, espacially mapping and normalization.
@@ -25,7 +28,7 @@ class OdooConnector extends BaseConnector {
           if (err) return reject(err);
           if (!uid) return reject(new Error('Invalid login credentials'));
 
-          console.log('[OdooConnector] authenticated to Odoo', uid);
+          logger.info(`authenticated to Odoo ${url} with uid ${uid}`);
           this.sessionInfo.userId = uid;
           this.odoo.uid = uid; // Store for later use
           resolve();
@@ -45,7 +48,7 @@ class OdooConnector extends BaseConnector {
   }
 
   async getSessionInfo() {
-    console.log('[OdooConnector] sessionInfo before filling', JSON.stringify(this.sessionInfo, null, 2));
+    logger.debug('sessionInfo before filling %s', JSON.stringify(this.sessionInfo, null, 2));
     if (!this.sessionInfo.context) {
       const context = {
         configuration: {
@@ -58,10 +61,10 @@ class OdooConnector extends BaseConnector {
       };
       if (this.sessionInfo.userId) {
         const [user] = await this.execute_kw('res.users', 'read', [[[this.sessionInfo.userId], ['id', 'name', 'email', 'login', 'groups_id']]]);
-        console.log('[OdooConnector] user', user);
+        logger.debug('user %s', JSON.stringify(user, null, 2));
 
         const groups = await this.execute_kw('res.groups', 'read', [[user.groups_id, ['id', 'name', 'category_id']]]);
-        console.log('[OdooConnector] groups', groups);
+        logger.debug('groups %s', JSON.stringify(groups, null, 2));
 
         context.user = {
           id: user.id,
@@ -79,12 +82,12 @@ class OdooConnector extends BaseConnector {
       }
       this.sessionInfo.context = context;
     }
-    console.log('[OdooConnector] sessionInfo', JSON.stringify(this.sessionInfo, null, 2));
+    logger.debug('sessionInfo %s', JSON.stringify(this.sessionInfo, null, 2));
     return this.sessionInfo;
   }
 
   async listObjectTypes() {
-    console.log('listObjectTypes2');
+    logger.debug('listObjectTypes');
     const inParams = [
       [],
       ['model', 'name', 'transient', 'state'],
@@ -286,7 +289,7 @@ class OdooConnector extends BaseConnector {
    * @returns {Promise<Array<Object>>} - The list of records
    */
   async getData(objectType, { fields, where, limit, order } = {}) {
-    console.log('getData', objectType, fields, where, limit, order);
+    logger.debug('getData %s %s %s %s %s', objectType, fields, where, limit, order);
     objectType = this.normalizeInputObjectType(objectType);
 
     const orderString = order
@@ -301,7 +304,7 @@ class OdooConnector extends BaseConnector {
     const inParams = [await this.buildOdooDomain(objectType, where), this.normalizeInputFieldNames(objectType, fields), 0, limit || 2000];
     if (orderString) inParams.push(orderString);
 
-    console.log('inParams', inParams);
+    logger.debug('inParams %s', inParams);
 
     const result = await this.execute_kw(
         objectType,
@@ -311,12 +314,12 @@ class OdooConnector extends BaseConnector {
 
     if (relatedFields.length) {
       const relationNames = Array.from(new Set(relatedFields.map(f => f.split('.')[0])));
-      console.log('[OdooConnector] relationNames', relationNames);
+      logger.debug('relationNames %s', relationNames);
       const relations = await this.execute_kw('ir.model.fields', 'search_read', [[
         [['model', '=', objectType], ['name', 'in', relationNames]], 
         ['name', 'relation']
       ]]);
-      console.log('[OdooConnector] relations', relations);
+      logger.debug('relations %s', relations);
       for (const relationName of relationNames) {
         const relation = relations.find(r => r.name === relationName);
         if (!relation) continue;
@@ -326,13 +329,13 @@ class OdooConnector extends BaseConnector {
           .map(f => this.normalizeInputKey(relatedObjectType, f));
         const recordsWithRelation = result.filter(r => r[relationName]);
         const ids = recordsWithRelation.map(r => r[relationName][0]);
-        console.log('[OdooConnector] fieldsToFetch', fieldsToFetch);
-        console.log('[OdooConnector] ids', ids);
+        logger.debug('fieldsToFetch %s', fieldsToFetch);
+        logger.debug('ids %s', ids);
         const relatedResult = await this.execute_kw(
           relatedObjectType,
           'read', [[ids, fieldsToFetch]]
         );
-        console.log('[OdooConnector] relatedResult', relatedResult);
+        logger.debug('relatedResult %s', relatedResult);
         recordsWithRelation.forEach((r, i) => {
           Object.assign(r, { 
             [relationName]: this.normalizeOutputData(relatedObjectType, { id: ids[i], ...relatedResult[i] }) 
@@ -341,7 +344,7 @@ class OdooConnector extends BaseConnector {
       }
     }
 
-    console.log('[OdooConnector] result', result);
+    logger.debug('result %s', result);
     return { records: this.normalizeOutputData(objectType, result), totalSize: undefined, totalFetched: result.length };
   }
 
@@ -364,9 +367,9 @@ class OdooConnector extends BaseConnector {
   async createRecord(objectType, data) {
     objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
-      console.log('createRecord', objectType, data);
+      logger.debug('createRecord %s %s', objectType, data);
       const inParams = [this.normalizeInputData(objectType, data)];
-      console.log('createRecord', inParams);
+      logger.debug('createRecord %s', inParams);
       this.odoo.execute_kw(objectType, 'create', [inParams], (err, id) => {
         // TODO: check if it is the right contract
         if (err) return reject(err);
@@ -378,9 +381,9 @@ class OdooConnector extends BaseConnector {
   async updateData(objectType, id, data) {
     objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
-      console.log('updateData', objectType, id, data);
+      logger.debug('updateData %s %s %s', objectType, id, data);
       const inParams = [[parseInt(id)], this.normalizeInputData(objectType, data)];
-      console.log('updateData', inParams);
+      logger.debug('updateData %s', inParams);
       this.odoo.execute_kw(objectType, 'write', [inParams], (err, result) => {
         if (err) return reject({ success: false, error: err });
         resolve({ success: true, result });

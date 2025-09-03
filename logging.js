@@ -10,14 +10,14 @@ if (!fs.existsSync(LOG_DIR)) {
     fs.mkdirSync(LOG_DIR, { recursive: true })
 }
 
-const LOG_DEFAULT_LEVEL = 'info';
+const LOG_DEFAULT_LEVEL = 'debug';
 const LOG_FILE = path.join(LOG_DIR, `app${process.env.APP_LOG_VERSION ? '-' + process.env.APP_LOG_VERSION : ''}.log`);
 
 // Helper to format logs in one line
 function formatLog(log) {
   const ts = new Date(log.time).toISOString();
   const level = pino.levels.labels[log.level].toUpperCase();
-  const category = log.category ? `(${log.category}) ` : '';
+  const category = log.category ? `[${log.category}] ` : '';
   const msg = log.msg ?? '';
   return `${ts} ${level} ${category}${msg}`;
 }

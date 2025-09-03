@@ -8,6 +8,9 @@ const crypto = require('crypto');
 const fetch = (...args) =>
   import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const { BaseConnector } = require('../base-connector.js');
+const { getLogger } = require('../logging');
+
+const logger = getLogger('salesforce-connector');
 
 const mimeMap = {
   'jpg': 'image/jpeg',
@@ -87,9 +90,9 @@ class SalesforceConnector extends BaseConnector {
 
         const accessToken = signedRequestData.client.oauthToken;
         const instanceUrl = signedRequestData.client.instanceUrl;
-        console.log('[SalesforceConnector] signed request', signedRequestData);
-        console.log('[SalesforceConnector] instanceUrl (from signed request)', signedRequestData.client?.instanceUrl);
-        console.log('[SalesforceConnector] accessToken (from signed request)', signedRequestData.client?.accessToken);
+        logger.debug('signed request %s', signedRequestData);
+        logger.debug('instanceUrl (from signed request) %s', signedRequestData.client?.instanceUrl);
+        logger.debug('accessToken (from signed request) %s', signedRequestData.client?.accessToken);
 
         this.conn = new jsforce.Connection({
           instanceUrl,
@@ -105,12 +108,12 @@ class SalesforceConnector extends BaseConnector {
           this.sessionInfo.orgId = signedRequestData.context.organization.organizationId;
         }
 
-        console.log('[SalesforceConnector] Logged in via Signed Request');
-        console.log('[SalesforceConnector] instanceUrl:', this.conn.instanceUrl);
-        console.log('[SalesforceConnector] accessToken:', this.conn.accessToken);
+        logger.debug('Logged in via Signed Request');
+        logger.debug('instanceUrl: %s', this.conn.instanceUrl);
+        logger.debug('accessToken: %s', this.conn.accessToken);
 
       } catch (error) {
-        console.error('Error processing signed request:', error);
+        logger.error('Error processing signed request: %s', error);
         throw new Error(`Failed to process Salesforce signed request: ${error.message}`);
       }
     } else {
@@ -305,7 +308,7 @@ class SalesforceConnector extends BaseConnector {
       ${directionClause} 
       ${limit ? `LIMIT ${limit}` : ''} 
     `;
-    console.log('getData, soql', soql);
+    logger.debug('getData, soql %s', soql);
     const records = [];
     return new Promise((resolve, reject) => {
       try {
@@ -314,18 +317,18 @@ class SalesforceConnector extends BaseConnector {
             records.push(record);
           })
           .on('end', () => {
-            console.log(`[daquota proxy] total in database: ${query.totalSize}`);
-            console.log(`[daquota proxy] total fetched: ${query.totalFetched}`);
+            logger.debug('total in database: %d', query.totalSize);
+            logger.debug('total fetched: %d', query.totalFetched);
             resolve({ records: this.normalizeOutputData(objectType, records), totalSize: query.totalSize, totalFetched: query.totalFetched });
           })
           .on('error', (err) => {
-            console.error('[daquota proxy] error querying ' + this.objectType, err);
+            logger.error('error querying %s: %s', this.objectType, err);
             reject(err);
           })
           .run({ autoFetch: true, maxFetch: limit || 2000 }); // fetch more than 2000 records
           query.catch?.(reject);
         } catch (err) {
-          console.error('[daquota proxy] error querying (2) ' + this.objectType, err);
+          logger.error('error querying (2) %s: %s', this.objectType, err);
           reject(err);
         }
     });
@@ -404,7 +407,7 @@ class SalesforceConnector extends BaseConnector {
       };
     }));
 
-    console.log('getAttachments', files);
+    logger.debug('getAttachments %s', files);
     return files;
   }
 
