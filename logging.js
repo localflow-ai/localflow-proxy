@@ -11,7 +11,7 @@ if (!fs.existsSync(LOG_DIR)) {
 }
 
 const LOG_DEFAULT_LEVEL = 'debug';
-const LOG_FILE = path.join(LOG_DIR, `app${process.env.APP_LOG_VERSION ? '-' + process.env.APP_LOG_VERSION : ''}.log`);
+const LOG_FILE = path.join(LOG_DIR, `app${process.env.DAQUOTA_PROXY_VERSION ? '-' + process.env.DAQUOTA_PROXY_VERSION : ''}.log`);
 
 // Helper to format logs in one line
 function formatLog(log) {
