@@ -1,3 +1,6 @@
+const { getLogger } = require('./logging');
+const logger = getLogger('base-connector');
+
 class BaseConnector {
     constructor() {
     }
@@ -40,15 +43,15 @@ class BaseConnector {
     }
 
     async createObjectTypeMapping(mapping) {
-        console.log('[daquota proxy] creating object type mapping', mapping);
+        logger.info('[daquota proxy] creating object type mapping', mapping);
         if (!this.sessionInfo.mappings) this.sessionInfo.mappings = {};
         if (!this.sessionInfo.mappings.objectTypeMapping) this.sessionInfo.mappings.objectTypeMapping = {};
         this.sessionInfo.mappings.objectTypeMapping = mapping;
         this.sessionInfo.mappings.objectTypeMappingReversed = Object.fromEntries(
             Object.entries(mapping).map(([k, v]) => [v, k])
         );
-        console.log('[daquota proxy] object type mapping', this.sessionInfo.mappings.objectTypeMapping);
-        console.log('[daquota proxy] reversed object type mapping', this.sessionInfo.mappings.objectTypeMappingReversed);
+        logger.info('[daquota proxy] object type mapping', this.sessionInfo.mappings.objectTypeMapping);
+        logger.info('[daquota proxy] reversed object type mapping', this.sessionInfo.mappings.objectTypeMappingReversed);
         return { success: true };
     }   
 
@@ -56,7 +59,7 @@ class BaseConnector {
      * Creates a field mapping and a reversed mapping for output/input key translation.
      */
     async createFieldMapping(objectType, mapping) {
-        console.log('[daquota proxy] creating mapping', mapping);
+        logger.info('[daquota proxy] creating mapping', mapping);
 
         if (!this.sessionInfo.mappings) this.sessionInfo.mappings = {};
         if (!this.sessionInfo.mappings.fieldMapping) this.sessionInfo.mappings.fieldMapping = {};
@@ -66,8 +69,8 @@ class BaseConnector {
         this.sessionInfo.mappings.fieldMappingReversed[objectType] = this._normalizeMapping(Object.fromEntries(
             Object.entries(mapping).map(([k, v]) => [v, k])
         ));
-        console.log('[daquota proxy] field mapping', this.sessionInfo.mappings.fieldMapping);
-        console.log('[daquota proxy] reversed field mapping', this.sessionInfo.mappings.fieldMappingReversed);
+        logger.info('[daquota proxy] field mapping', this.sessionInfo.mappings.fieldMapping);
+        logger.info('[daquota proxy] reversed field mapping', this.sessionInfo.mappings.fieldMappingReversed);
         /*const test = [
             {
                 "id": 14,
@@ -108,14 +111,14 @@ class BaseConnector {
                 "phone": "(355)-687-3262"
             }
         ]
-        console.log('[daquota proxy] testing mapping', this.normalizeOutputData(test));
-        console.log('[daquota proxy] testing mapping reversed', this.normalizeInputData(this.normalizeOutputData(test)));
+        logger.info('[daquota proxy] testing mapping', this.normalizeOutputData(test));
+        logger.info('[daquota proxy] testing mapping reversed', this.normalizeInputData(this.normalizeOutputData(test)));
         */
         return { success: true };
     }
 
     normalizeInputData(objectType, data, context = []) {
-        //console.log('[daquota proxy] normalizeInputData', data, context);
+        //logger.info('[daquota proxy] normalizeInputData', data, context);
         if (Array.isArray(data)) {
             return data.map(d => this.normalizeInputData(objectType, d));
         } else if (data && typeof data === 'object') {
@@ -126,7 +129,7 @@ class BaseConnector {
             } 
             for (let [key, value] of Object.entries(data)) {
                 const fullKey = [...context, key].join('.');
-                //console.log('[daquota proxy] normalizeInputData, key, fullkey', key, fullKey, value);
+                //logger.info('[daquota proxy] normalizeInputData, key, fullkey', key, fullKey, value);
                 const mappedKey = this.normalizeInputKey(objectType, fullKey);
                 if (mapping[fullKey + '$$conf'] && mapping[fullKey + '$$conf'].readonly) {
                     continue;

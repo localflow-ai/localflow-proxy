@@ -5,6 +5,9 @@ const { createSession, getSession } = require('./sessionManager.js');
 const { SalesforceConnector } = require('./connectors/salesforce.js');
 const { OdooConnector } = require('./connectors/odoo.js');
 
+const { getLogger } = require('./logging');
+const logger = getLogger('routes');
+
 const connectorMap = {
     salesforce: SalesforceConnector,
     odoo: OdooConnector
@@ -16,7 +19,7 @@ const asyncHandler = fn => (req, res, next) => {
 
 router.post('/session', asyncHandler(async (req, res) => {
     const { type, config } = req.body;
-    console.log('[daquota proxy] create new session', type);
+    logger.info('[daquota proxy] create new session', type);
     const ConnectorClass = connectorMap[type?.toLowerCase()];
     if (!ConnectorClass) return res.status(400).json({ error: 'Unsupported connector type', details: 'Valid connector types are: salesforce, odoo' });
 
@@ -32,7 +35,7 @@ router.post('/session', asyncHandler(async (req, res) => {
 }));
 
 router.use((req, res, next) => {
-    console.info('[daquota proxy] request', req.method, req.path);
+    logger.info('[daquota proxy] request', req.method, req.path);
     const auth = req.headers.authorization;
     if (!auth || !auth.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Missing or invalid token' });
@@ -52,7 +55,7 @@ router.use((req, res, next) => {
 
 router.get('/session', asyncHandler(async (req, res) => {
     const sessionInfo = await req.session.connector.getSessionInfo();
-    console.log('[daquota proxy] sessionInfo', JSON.stringify(sessionInfo, null, 2));
+    logger.info('[daquota proxy] sessionInfo', JSON.stringify(sessionInfo, null, 2));
     res.json(sessionInfo);
 }));
 
@@ -83,7 +86,7 @@ router.get('/metadata/:objectType', asyncHandler(async (req, res) => {
 
 router.get('/data/:objectType', asyncHandler(async (req, res, next) => {
     const { fields, where, limit, order } = req.query;
-    console.log('[daquota proxy] getData', req.params.objectType, fields, where, limit, order);
+    logger.info('[daquota proxy] getData', req.params.objectType, fields, where, limit, order);
     const parsedFields = fields ? fields.split(',') : null;
     const result = await req.session.connector.getData(req.params.objectType, {
         fields: parsedFields,
