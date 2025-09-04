@@ -159,19 +159,32 @@ class OdooConnector extends BaseConnector {
       layoutable,
       label: modelInfo ? (modelInfo.name || objectType) : objectType,
       labelPlural: modelInfo ? (modelInfo.name + 's' || objectType + 's') : objectType + 's',
-      fields: this.processFields(objectType, fields.map((field) => ({
-        ...field,
-        name: field.name,
-        relationshipName: field.name,
-        label: field.field_description,
-        type: this.normalizeOdooType(field.ttype),
-        picklistValues: field.selection.map(([value, label]) => ({ value, label })),
-        required: field.required,
-        length: field.size || 255,
-        updateable: this.isFieldWritable(field),
-        createable: this.isFieldWritable(field),
-        referenceTo: field.relation ? [this.normalizeOutputObjectType(field.relation)] : []
-      })))
+      fields: this.processFields(objectType, fields.map(field => {
+        if (typeof field.selection === 'string') {
+          try {
+            field.selection = JSON.parse(field.selection.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
+          } catch (e) {
+            logger.error('Failed to parse field.selection for %s: %s %s', field.name, field.selection, e);
+          }
+        } else {
+          if (!(typeof field.selection === 'boolean' || Array.isArray(field.selection))) {
+            logger.warn('Unexpected field.selection type for %s: %s', field.name, field.selection);
+          }
+        }
+        return {
+          ...field,
+          name: field.name,
+          relationshipName: field.name,
+          label: field.field_description,
+          type: this.normalizeOdooType(field.ttype),
+          picklistValues: Array.isArray(field.selection) ? field.selection.map(([value, label]) => ({ value, label })) : undefined,
+          required: field.required,
+          length: field.size || 255,
+          updateable: this.isFieldWritable(field),
+          createable: this.isFieldWritable(field),
+          referenceTo: field.relation ? [this.normalizeOutputObjectType(field.relation)] : []
+        }
+      }))
     };
   }
   // Basic mapping from Odoo types to Salesforce-like types
@@ -289,7 +302,7 @@ class OdooConnector extends BaseConnector {
    * @returns {Promise<Array<Object>>} - The list of records
    */
   async getData(objectType, { fields, where, limit, order } = {}) {
-    logger.debug('getData %s %s %s %s %s', objectType, fields, where, limit, order);
+    logger.debug('getData %s %s %s %s %s', objectType, fields, JSON.stringify(where), limit, order);
     objectType = this.normalizeInputObjectType(objectType);
 
     const orderString = order
@@ -304,22 +317,22 @@ class OdooConnector extends BaseConnector {
     const inParams = [await this.buildOdooDomain(objectType, where), this.normalizeInputFieldNames(objectType, fields), 0, limit || 2000];
     if (orderString) inParams.push(orderString);
 
-    logger.debug('inParams %s', inParams);
+    logger.debug('inParams %s', JSON.stringify(inParams));
 
     const result = await this.execute_kw(
-        objectType,
-        'search_read',
-        [inParams]
+      objectType,
+      'search_read',
+      [inParams]
     );
 
     if (relatedFields.length) {
       const relationNames = Array.from(new Set(relatedFields.map(f => f.split('.')[0])));
       logger.debug('relationNames %s', relationNames);
       const relations = await this.execute_kw('ir.model.fields', 'search_read', [[
-        [['model', '=', objectType], ['name', 'in', relationNames]], 
+        [['model', '=', objectType], ['name', 'in', relationNames]],
         ['name', 'relation']
       ]]);
-      logger.debug('relations %s', relations);
+      logger.debug('relations %s', JSON.stringify(relations));
       for (const relationName of relationNames) {
         const relation = relations.find(r => r.name === relationName);
         if (!relation) continue;
@@ -329,22 +342,22 @@ class OdooConnector extends BaseConnector {
           .map(f => this.normalizeInputKey(relatedObjectType, f));
         const recordsWithRelation = result.filter(r => r[relationName]);
         const ids = recordsWithRelation.map(r => r[relationName][0]);
-        logger.debug('fieldsToFetch %s', fieldsToFetch);
-        logger.debug('ids %s', ids);
+        logger.debug('fieldsToFetch %s', JSON.stringify(fieldsToFetch));
+        logger.debug('ids %s', JSON.stringify(ids));
         const relatedResult = await this.execute_kw(
           relatedObjectType,
           'read', [[ids, fieldsToFetch]]
         );
-        logger.debug('relatedResult %s', relatedResult);
+        logger.debug('relatedResult %s', JSON.stringify(relatedResult));
         recordsWithRelation.forEach((r, i) => {
-          Object.assign(r, { 
-            [relationName]: this.normalizeOutputData(relatedObjectType, { id: ids[i], ...relatedResult[i] }) 
+          Object.assign(r, {
+            [relationName]: this.normalizeOutputData(relatedObjectType, { id: ids[i], ...relatedResult[i] })
           });
         });
       }
     }
 
-    logger.debug('result %s', result);
+    logger.debug('returning %s object(s)', result.length);
     return { records: this.normalizeOutputData(objectType, result), totalSize: undefined, totalFetched: result.length };
   }
 
@@ -367,9 +380,9 @@ class OdooConnector extends BaseConnector {
   async createRecord(objectType, data) {
     objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
-      logger.debug('createRecord %s %s', objectType, data);
+      logger.debug('createRecord %s %s', objectType, JSON.stringify(data));
       const inParams = [this.normalizeInputData(objectType, data)];
-      logger.debug('createRecord %s', inParams);
+      logger.debug('createRecord %s', JSON.stringify(inParams));
       this.odoo.execute_kw(objectType, 'create', [inParams], (err, id) => {
         // TODO: check if it is the right contract
         if (err) return reject(err);
@@ -381,9 +394,9 @@ class OdooConnector extends BaseConnector {
   async updateData(objectType, id, data) {
     objectType = this.normalizeInputObjectType(objectType);
     return new Promise((resolve, reject) => {
-      logger.debug('updateData %s %s %s', objectType, id, data);
+      logger.debug('updateData %s %s %s', objectType, id, JSON.stringify(data));
       const inParams = [[parseInt(id)], this.normalizeInputData(objectType, data)];
-      logger.debug('updateData %s', inParams);
+      logger.debug('updateData %s', JSON.stringify(inParams));
       this.odoo.execute_kw(objectType, 'write', [inParams], (err, result) => {
         if (err) return reject({ success: false, error: err });
         resolve({ success: true, result });
