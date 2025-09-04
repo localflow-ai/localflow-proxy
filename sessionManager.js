@@ -16,10 +16,10 @@ function createSession(type, connector) {
         evictOldestSession();
     }
 
-    sessions.set(token, { 
-        type, 
-        connector, 
-        createdAt: Date.now(), 
+    sessions.set(token, {
+        type,
+        connector,
+        createdAt: Date.now(),
         lastAccess: null  // never accessed yet
     });
 
@@ -78,7 +78,11 @@ function evictOldestSession() {
 }
 
 // Background cleanup of idle sessions
-setInterval(() => {
+const intervalKey = (process.env.DAQUOTA_PROXY_VERSION ?? 'dev') + '_cleanSessionInterval';
+if (global[intervalKey]) {
+    clearInterval(global[intervalKey]);
+}
+global[intervalKey] = setInterval(() => {
     logger.debug('Running background cleanup of idle sessions');
     const now = Date.now();
     for (const [token, session] of sessions.entries()) {
