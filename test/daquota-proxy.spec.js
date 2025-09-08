@@ -14,10 +14,10 @@ const config = {
 
 const client = new ProxyClient(API_URL);
 describe('Proxy', () => {
-    let client;
+    let client = new ProxyClient(API_URL);
 
     beforeEach(async () => {
-        client = new ProxyClient('http://localhost:3000'); // Remplace par ton URL de base
+        client = new ProxyClient(API_URL);
         const result = await client.connect('odoo', config);
         console.log('login result: ', result);
         expect(result).toBeDefined();
@@ -88,42 +88,44 @@ describe('Proxy', () => {
         return differences;
     }
 
+    async function configureTestMappings() {
 
+        const objectTypeMapping = {
+            "fr.localflow.geodata": "LocalFlow__GeoData__c",
+            "res.partner": "Account"
+        };
+        const result1 = await client.createObjectTypeMapping(objectTypeMapping);
+        expect(result1).toBeDefined();
+        console.log("create object type mapping result", result1)
+
+        const fieldMapping = {
+            "id": "Id",
+            "name": "Name",
+            "email": "Email",
+            "street": "DefaultAddress.street",
+            "city": "DefaultAddress.city|DefaultCity",
+            "state_id[1]": "DefaultAddress.state",
+            "zip": "DefaultAddress.postalCode",
+            "country_id[1]": "DefaultAddress.country",
+            "partner_latitude": "DefaultAddress.latitude|DefaultLatitude",
+            "partner_longitude": "DefaultAddress.longitude|DefaultLongitude"
+        };
+        const result2 = await client.createFieldMapping(fieldMapping);
+        expect(result2).toBeDefined();
+        console.log("create field mapping result", result2)
+
+        const fieldMappingGeoData = {
+            "content": "LocalFlow__Content__c",
+            "type": "LocalFlow__Type__c"
+        };
+        const result3 = await client.createFieldMapping('fr.localflow.geodata', fieldMappingGeoData);
+        expect(result3).toBeDefined();
+        console.log("create field mapping result for geodata", result3)
+    }
 
     describe('Odoo mapping scenario', () => {
         it('can create and get mapping', async () => {
-
-            const objectTypeMapping = {
-                "fr.localflow.geodata": "LocalFlow__GeoData__c",
-                "res.partner": "Account"
-            };
-            const result1 = await client.createObjectTypeMapping(objectTypeMapping);
-            expect(result1).toBeDefined();
-            console.log("create object type mapping result", result1)
-
-            const fieldMapping = {
-                "id": "Id",
-                "name": "Name",
-                "email": "Email",
-                "street": "DefaultAddress.street",
-                "city": "DefaultAddress.city|DefaultCity",
-                "state_id[1]": "DefaultAddress.state",
-                "zip": "DefaultAddress.postalCode",
-                "country_id[1]": "DefaultAddress.country",
-                "partner_latitude": "DefaultAddress.latitude|DefaultLatitude",
-                "partner_longitude": "DefaultAddress.longitude|DefaultLongitude"
-            };
-            const result2 = await client.createFieldMapping(fieldMapping);
-            expect(result2).toBeDefined();
-            console.log("create field mapping result", result2)
-
-            const fieldMappingGeoData = {
-                "content": "LocalFlow__Content__c",
-                "type": "LocalFlow__Type__c"
-            };
-            const result3 = await client.createFieldMapping('fr.localflow.geodata', fieldMappingGeoData);
-            expect(result3).toBeDefined();
-            console.log("create field mapping result for geodata", result3)
+            await configureTestMappings();
 
             const resultSession = await client.getSessionInfo();
             console.log('getSessionInfo result after mapping', resultSession)
@@ -135,10 +137,12 @@ describe('Proxy', () => {
                 "userId": 2,
                 "mappings": {
                     "objectTypeMapping": {
-                        "fr.localflow.geodata": "LocalFlow__GeoData__c"
+                        "fr.localflow.geodata": "LocalFlow__GeoData__c",
+                        "res.partner": "Account"
                     },
                     "objectTypeMappingReversed": {
-                        "LocalFlow__GeoData__c": "fr.localflow.geodata"
+                        "LocalFlow__GeoData__c": "fr.localflow.geodata",
+                        "Account": "res.partner"
                     },
                     "fieldMapping": {
                         "$global": {
@@ -314,6 +318,22 @@ describe('Proxy', () => {
             expect(metadata).toBeDefined();
             expect(metadata.fields).toBeDefined();
         });
+    });
+
+    describe('Get Data', () => {
+        it('can get LocalFlow company', async () => {
+            await configureTestMappings();
+
+            const result = await client.getData('Account', {
+                fields: ['Id', 'Name'], 
+                limit: 2000, 
+                where: {
+                    'Name': 'LocalFlow'
+                }
+            });
+            console.log('getData result', result)
+        });
+
     });
 
     // describe('Data', () => {
