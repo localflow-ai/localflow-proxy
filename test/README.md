@@ -4,12 +4,16 @@ This document explains the proxy connector validation and provides basic testing
 
 ## How to use
 
+First, adjust `test/daquota-proxy-test.config.js` to suit your context.
+
+Then, start your daquota-proxy, and run tests as follow:
+
 ```
 cd /path/to/daquota-proxy
 ./test.sh
 ```
 
-Avoid input test vars with 
+💡 Avoid input test vars with:
 
 ```
 DAQUOTA_PROXY_TEST_USERNAME="my@email.com" DAQUOTA_PROXY_TEST_PASS="$MY_PASS_SECRET" ./test.sh 
