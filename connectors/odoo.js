@@ -164,11 +164,11 @@ class OdooConnector extends BaseConnector {
           try {
             field.selection = JSON.parse(field.selection.replace(/\(/g, '[').replace(/\)/g, ']').replace(/'/g, '"'));
           } catch (e) {
-            logger.error('Failed to parse field.selection for %s: %s %s', field.name, field.selection, e);
+            logger.error('Failed to parse field.selection for %s: %s %s', field.name, JSON.stringify(field.selection), e);
           }
         } else {
           if (!(typeof field.selection === 'boolean' || Array.isArray(field.selection))) {
-            logger.warn('Unexpected field.selection type for %s: %s', field.name, field.selection);
+            logger.warn('Unexpected field.selection type for %s: %s', field.name, JSON.stringify(field.selection));
           }
         }
         return {
@@ -267,12 +267,13 @@ class OdooConnector extends BaseConnector {
         }
       } else if (value === null) {
         // Odoo domain for null is [('field', '=', false)]
-        domain.push([key, '=', false]);
+        domain.push([this.normalizeInputKey(objectType, key), '=', false]);
       } else {
-        domain.push([key, '=', value]);
+        domain.push([this.normalizeInputKey(objectType, key), '=', value]);
       }
     }
 
+    logger.debug('Odoo domain built successfully: %s --> %s', JSON.stringify(where), JSON.stringify(domain));
     return domain;
   }
 
