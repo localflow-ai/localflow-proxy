@@ -2,13 +2,13 @@
 // import crypto from 'crypto';
 // import fetch from 'node-fetch'
 // import { BaseConnector } from '../base-connector.js';
-const jsforce = require('jsforce');
-const crypto = require('crypto');
-//const fetch = require('node-fetch');
+import jsforce  from 'jsforce';
+import crypto  from 'crypto';
+//import fetch  from 'node-fetch';
 const fetch = (...args) =>
   import('node-fetch').then(({ default: fetch }) => fetch(...args));
-const { BaseConnector } = require('../base-connector.js');
-const { getLogger } = require('../logging');
+import { BaseConnector } from '../base-connector.js';
+import { getLogger } from '../logging.js';
 
 const logger = getLogger('salesforce-connector');
 
@@ -437,4 +437,4 @@ class SalesforceConnector extends BaseConnector {
 
 }
 
-module.exports = { SalesforceConnector };
+export  { SalesforceConnector };

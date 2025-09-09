@@ -1,11 +1,11 @@
-const express = require('express');
+import express  from 'express';
 const router = express.Router();
 
-const { createSession, getSession } = require('./sessionManager.js');
-const { SalesforceConnector } = require('./connectors/salesforce.js');
-const { OdooConnector } = require('./connectors/odoo.js');
+import { createSession, getSession } from './sessionManager.js';
+import { SalesforceConnector } from './connectors/salesforce.js';
+import { OdooConnector } from './connectors/odoo.js';
 
-const { getLogger } = require('./logging');
+import { getLogger } from './logging.js';
 const logger = getLogger('routes');
 
 const connectorMap = {
@@ -161,4 +161,4 @@ router.use((err, req, res, next) => {
   }
 });
 
-module.exports = router;
+export default router;

@@ -1,8 +1,8 @@
-const express = require('express');
-const cors = require('cors');
-const routes = require('./routes.js');
+import express from 'express';
+import cors from 'cors';
+import routes from './routes.js';
 
-const { getLogger } = require('./logging');
+import { getLogger } from './logging.js';
 const logger = getLogger('index');
 
 //dotenv.config();
