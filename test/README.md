@@ -2,6 +2,19 @@
 
 This document explains the proxy connector validation and provides basic testing information.
 
+## How to use
+
+```
+cd /path/to/daquota-proxy
+./test.sh
+```
+
+Avoid input test vars with 
+
+```
+DAQUOTA_PROXY_TEST_USERNAME="my@email.com" DAQUOTA_PROXY_TEST_PASS="$MY_PASS_SECRET" ./test.sh 
+```
+
 ## Goals
 
 The goals of the connector validation is to make sure that :
