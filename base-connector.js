@@ -1,4 +1,4 @@
-const { getLogger } = require('./logging');
+import { getLogger } from './logging.js';
 const logger = getLogger('base-connector');
 
 class BaseConnector {
@@ -268,4 +268,4 @@ class BaseConnector {
     }
 }
 
-module.exports = { BaseConnector };
+export  { BaseConnector };

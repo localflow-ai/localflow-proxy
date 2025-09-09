@@ -1,7 +1,7 @@
-const Odoo = require('odoo-xmlrpc');
-const { BaseConnector } = require('../base-connector.js');
-const xmlrpc = require('xmlrpc');
-const { getLogger } = require('../logging');
+import Odoo  from 'odoo-xmlrpc';
+import { BaseConnector } from '../base-connector.js';
+import xmlrpc  from 'xmlrpc';
+import { getLogger } from '../logging.js';
 
 const logger = getLogger('odoo-connector');
 
@@ -450,4 +450,4 @@ class OdooConnector extends BaseConnector {
 
 }
 
-module.exports = { OdooConnector };
+export  { OdooConnector };
