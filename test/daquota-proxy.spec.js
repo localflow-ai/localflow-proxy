@@ -1,8 +1,8 @@
-const { API_URL, API_TOKEN } = require('./daquota-proxy-test.config');
-const { ProxyClient } = require('./ProxyClient');
+import {jest} from '@jest/globals';
 
-//read -s daquotaPass
-//DAQUOTA_PROXY_TEST_USERNAME="louis.grignon@protonmail.com" DAQUOTA_PROXY_TEST_PASS="$daquotaPass" npm test
+import { API_URL } from './daquota-proxy-test.config';
+import { ProxyClient } from './ProxyClient';
+import { faker } from '@faker-js/faker';
 
 const config = {
     "url": "https://localflow.fr",
@@ -320,21 +320,52 @@ describe('Proxy', () => {
         });
     });
 
-    describe('Get Data', () => {
-        it('can get LocalFlow company', async () => {
+    // describe('Get Data', () => {
+    //     it('can get LocalFlow company', async () => {
+    //         await configureTestMappings();
+
+    //         const result = await client.getData('Account', {
+    //             fields: ['Id', 'Name'], 
+    //             limit: 2000, 
+    //             where: {
+    //                 'Name': 'LocalFlow'
+    //             }
+    //         });
+    //         console.log('getData result', result)
+    //     });
+
+    // });
+
+    describe('Create Data', () => {
+        it('can create a new company and get it after', async () => {
             await configureTestMappings();
 
-            const result = await client.getData('Account', {
-                fields: ['Id', 'Name'], 
-                limit: 2000, 
+            const TEST_NAME = "Test_" + faker.company.name();
+            const result = await client.createData('Account', {
+                'Name': TEST_NAME
+            });
+            console.log('createData result', result)
+            expect(result).toBeDefined();
+            const createdId = result.id;
+            expect(createdId).toBeDefined();
+
+            const resultGet = await client.getData('Account', {
+                fields: ['Id', 'Name'],
                 where: {
-                    'Name': 'LocalFlow'
+                    'Id': createdId
                 }
             });
-            console.log('getData result', result)
+            console.log('get after create result', resultGet)
+            expect(resultGet).toBeDefined();
+            expect(resultGet.records).toBeDefined();
+            expect(resultGet.records.length).toBe(1);
+            expect(resultGet.records[0].Id).toBe(createdId);
+            expect(resultGet.records[0].Name).toBe(TEST_NAME);
+            
         });
 
     });
+
 
     // describe('Data', () => {
     //     it('can get data with options', async () => {

@@ -1,5 +1,5 @@
 
-class ProxyClient {
+export class ProxyClient {
 
     constructor(baseUrl, token) {
         this.baseUrl = baseUrl;
@@ -220,8 +220,4 @@ class ProxyClient {
             })
         });
     }
-}
-
-module.exports = {
-    ProxyClient
 }

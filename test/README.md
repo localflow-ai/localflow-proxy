@@ -304,6 +304,3 @@ Delete the configuration object and get it back (KO if found)
 
  
   
-
-
-
