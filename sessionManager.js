@@ -1,5 +1,5 @@
-const crypto = require('crypto');
-const { getLogger } = require('./logging');
+import crypto  from 'crypto';
+import { getLogger } from './logging.js';
 
 const sessions = new Map();
 const SESSION_TTL = 1000 * 60 * 60 * 24; // 24 hours idle timeout
@@ -94,7 +94,7 @@ global[intervalKey] = setInterval(() => {
     }
 }, CLEANUP_INTERVAL);
 
-module.exports = {
+export  {
     createSession,
     getSession,
     deleteSession

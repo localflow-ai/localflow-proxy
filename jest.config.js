@@ -1,5 +1,5 @@
 // jest.config.js
-module.exports = {
+export default {
   testEnvironment: 'node',
   testMatch: ['<rootDir>/test/**/*.spec.js','<rootDir>/test/*.spec.js'],
   coveragePathIgnorePatterns: [
