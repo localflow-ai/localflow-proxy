@@ -267,8 +267,10 @@ class OdooConnector extends BaseConnector {
         }
       } else if (value === null) {
         // Odoo domain for null is [('field', '=', false)]
+        key = this.normalizeInputKey(objectType, key);
         domain.push([key, '=', false]);
       } else {
+        key = this.normalizeInputKey(objectType, key);
         domain.push([key, '=', value]);
       }
     }
