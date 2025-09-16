@@ -323,13 +323,13 @@ class SalesforceConnector extends BaseConnector {
           })
           .on('error', (err) => {
             logger.error('error querying %s: %s', this.objectType, err);
-            reject(err);
+            reject('error querying ' + this.objectType);
           })
           .run({ autoFetch: true, maxFetch: limit || 2000 }); // fetch more than 2000 records
           query.catch?.(reject);
         } catch (err) {
-          logger.error('error querying (2) %s: %s', this.objectType, err);
-          reject(err);
+          logger.error('error querying %s: %s', this.objectType);
+          reject('error querying ' + this.objectType);
         }
     });
   }

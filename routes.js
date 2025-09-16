@@ -35,7 +35,7 @@ router.post('/session', asyncHandler(async (req, res) => {
 }));
 
 router.use((req, res, next) => {
-    logger.info('request', req.method, req.path);
+    logger.info('request %s %s', req.method, req.path);
     const auth = req.headers.authorization;
     if (!auth || !auth.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Missing or invalid token' });
@@ -88,13 +88,24 @@ router.get('/data/:objectType', asyncHandler(async (req, res, next) => {
     const { fields, where, limit, order } = req.query;
     logger.info('getData', req.params.objectType, fields, where, limit, order);
     const parsedFields = fields ? fields.split(',') : null;
-    const result = await req.session.connector.getData(req.params.objectType, {
-        fields: parsedFields,
-        limit: limit ? parseInt(limit) : undefined,
-        order: order ? JSON.parse(order) : undefined,
-        where: where ? JSON.parse(where) : undefined
-    });
-    res.json(result);
+    try {
+        const result = await req.session.connector.getData(req.params.objectType, {
+            fields: parsedFields,
+            limit: limit ? parseInt(limit) : undefined,
+            order: order ? JSON.parse(order) : undefined,
+            where: where ? JSON.parse(where) : undefined
+        });
+        res.json(result);
+    } catch (err) {
+        logger.error('getData error', err);
+        return res.status(500).json({ 
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Wrong query parameters'
+            }
+        });
+    }
 }));
 
 router.get('/data/:objectType/:id', asyncHandler(async (req, res) => {
