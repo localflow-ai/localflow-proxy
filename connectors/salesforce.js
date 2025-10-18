@@ -44,12 +44,12 @@ class SalesforceConnector extends BaseConnector {
     this.sessionInfo = null;
   }
 
-  async login({ username, password, token, loginUrl, clientId, clientSecret, refreshToken, signedRequest }) {
-    this.sessionInfo = { username, loginUrl, clientId, signedRequest };
+  async login({ username, password, token, loginUrl, url, clientId, clientSecret, refreshToken, signedRequest }) {
+    this.sessionInfo = { username, loginUrl, url, clientId, signedRequest };
     if (username && password) {
       // Username/password login
       this.conn = new jsforce.Connection({
-        loginUrl: loginUrl || 'https://login.salesforce.com',
+        loginUrl: url || loginUrl || 'https://login.salesforce.com',
       });
       await this.conn.login(username, password + (token || ''));
       this.sessionInfo.instanceUrl = this.conn.instanceUrl;
@@ -59,7 +59,7 @@ class SalesforceConnector extends BaseConnector {
     } else if (clientId && clientSecret && refreshToken) {
       // OAuth2 login using refresh token
       const oauth2 = new jsforce.OAuth2({
-        loginUrl: loginUrl || 'https://login.salesforce.com',
+        loginUrl: url || loginUrl || 'https://login.salesforce.com',
         clientId,
         clientSecret,
       });
