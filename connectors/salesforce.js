@@ -209,6 +209,26 @@ class SalesforceConnector extends BaseConnector {
     };
   }
 
+  async getObjectTypeFromId(id) {
+    try {
+      console.debug('[backoffice-connector] get SObject type from record id', id);
+      const prefix = id.substring(0, 3);
+      const globalDesc = await this.conn.describeGlobal();
+
+      for (const sobject of globalDesc.sobjects) {
+        const sobjectDesc = await this.conn.sobject(sobject.name).describe();
+        if (sobjectDesc.keyPrefix === prefix) {
+          console.debug('[backoffice-connector] found', sobject.name);
+          return sobject.name;
+        }
+      }
+    } catch (error) {
+      console.error('[backoffice-connector] error', error);
+    }
+
+    return null;
+  }
+
   async buildSOQLWhere(objectType, where) {
     if (!where || typeof where !== 'object') return '';
 

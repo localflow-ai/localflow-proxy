@@ -84,6 +84,11 @@ router.get('/metadata/:objectType', asyncHandler(async (req, res) => {
     res.json(result);
 }));
 
+router.get('/metadata/object-type/:id', asyncHandler(async (req, res) => {
+    const result = await req.session.connector.getObjectTypeFromId(req.params.id);
+    res.json(result);
+}));
+
 router.get('/data/:objectType', asyncHandler(async (req, res, next) => {
     const { fields, where, limit, order } = req.query;
     logger.info('getData', req.params.objectType, fields, where, limit, order);
