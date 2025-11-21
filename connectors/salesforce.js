@@ -134,7 +134,12 @@ class SalesforceConnector extends BaseConnector {
       };
       if (this.sessionInfo.userId) {
         const user = await this.conn.sobject("User").retrieve(this.sessionInfo.userId);
-        const profile = await this.conn.sobject("Profile").retrieve(user.ProfileId);
+        let profile;
+	try {
+		profile = await this.conn.sobject("Profile").retrieve(user.ProfileId);
+	} catch(e) {
+		logger.error('Cannot get profile');
+	}
         context.user = {
           id: user.Id,
           name: user.Username,
@@ -144,8 +149,9 @@ class SalesforceConnector extends BaseConnector {
           locale: user.LocaleSidKey,
           timezone: user.TimeZoneSidKey,
           language: user.LanguageLocaleKey,
-          isAdmin: profile.Name.toLowerCase().includes('admin'),
+          isAdmin: profile ? profile.Name.toLowerCase().includes('admin') : false,
         };
+	try {
         const permSets = await this.conn.query(`
           SELECT PermissionSet.Id, PermissionSet.Name
           FROM PermissionSetAssignment 
@@ -160,6 +166,9 @@ class SalesforceConnector extends BaseConnector {
             name: r.PermissionSet.Name,
           }))
         ];
+	} catch(e) {
+		logger.error('Cannot get permission set');
+	}
 
       }
       this.sessionInfo.context = context;
