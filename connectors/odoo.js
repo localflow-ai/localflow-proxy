@@ -18,22 +18,15 @@ class OdooConnector extends BaseConnector {
     this.sessionInfo = { url, db, username };
     this.odoo = new Odoo({ url, db, username, password });
     return new Promise((resolve, reject) => {
-      this.odoo.connect(err => {
-        if (err) return reject(err);
-
-        // Manually set up a "common" client for authentication
-        const common = xmlrpc.createClient({ url: `${url}/xmlrpc/2/common` });
-
-        common.methodCall('authenticate', [db, username, password, {}], (err, uid) => {
-          if (err) return reject(err);
-          if (!uid) return reject(new Error('Invalid login credentials'));
-
-          logger.info(`authenticated to Odoo ${url} with uid ${uid}`);
-          this.sessionInfo.userId = uid;
-          this.odoo.uid = uid; // Store for later use
-          resolve();
-        });
-
+      this.odoo.connect((err, uid) => {
+        if (err) {
+          console.error('Failed to connect to Odoo', err);
+          return reject(err);
+        }
+        logger.info(`authenticated to Odoo ${url} with uid ${uid}`);
+        this.sessionInfo.userId = uid;
+        this.odoo.uid = uid; // Store for later use
+        resolve();
       });
     });
   }
