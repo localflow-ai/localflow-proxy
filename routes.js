@@ -4,6 +4,7 @@ const router = express.Router();
 const { createSession, getSession } = require('./sessionManager.js');
 const { SalesforceConnector } = require('./connectors/salesforce.js');
 const { OdooConnector } = require('./connectors/odoo.js');
+const { trackAccess } = require('./accessTracker.js');
 
 const { getLogger } = require('./logging');
 const logger = getLogger('routes');
@@ -73,6 +74,16 @@ router.post('/session/object-type-mapping', (req, res) => {
     const result = req.session.connector.createObjectTypeMapping(req.body);
     res.json(result);
 });
+
+router.get('/access-stats', asyncHandler(async (req, res) => {
+    const sessionInfo = req.session.connector.sessionInfo;
+    const userId = sessionInfo?.userId || sessionInfo?.username || 'unknown';
+    const resource = req.query.resource;
+    const readOnly = req.query.read === 'true';
+
+    const stats = trackAccess(userId, resource, readOnly);
+    res.json(stats);
+}));
 
 router.get('/metadata', asyncHandler(async (req, res) => {
     const result = await req.session.connector.listObjectTypes();
