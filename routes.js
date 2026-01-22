@@ -5,9 +5,13 @@ const { createSession, getSession } = require('./sessionManager.js');
 const { SalesforceConnector } = require('./connectors/salesforce.js');
 const { OdooConnector } = require('./connectors/odoo.js');
 const { trackAccess } = require('./accessTracker.js');
+const { encrypt, decrypt } = require('./encryption.js');
 
 const { getLogger } = require('./logging');
 const logger = getLogger('routes');
+
+const fetch = (...args) =>
+    import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const connectorMap = {
     salesforce: SalesforceConnector,
@@ -75,7 +79,7 @@ router.post('/session/object-type-mapping', (req, res) => {
     res.json(result);
 });
 
-router.get('/access-stats', asyncHandler(async (req, res) => {
+router.get('/common/access-stats', asyncHandler(async (req, res) => {
     const sessionInfo = req.session.connector.sessionInfo;
     const userId = sessionInfo?.userId || sessionInfo?.username || 'unknown';
     const resource = req.query.resource;
@@ -83,6 +87,76 @@ router.get('/access-stats', asyncHandler(async (req, res) => {
 
     const stats = trackAccess(userId, resource, readOnly);
     res.json(stats);
+}));
+
+router.post('/common/encrypt', (req, res) => {
+    const text = req.body.message;
+    if (!text) {
+        return res.status(400).json({ error: 'Missing message query parameter' });
+    }
+    const sessionInfo = req.session.connector.sessionInfo;
+    logger.info('OrgId: %s', sessionInfo.orgId);
+    if (!sessionInfo.orgId) {
+        return res.status(400).json({ error: 'Invalid session' });
+    }
+    const encrypted = encrypt(text, sessionInfo.orgId);
+    logger.info('Encrypted: %s', encrypted);
+    res.json({ encrypted });
+});
+
+router.post('/common/decrypt', (req, res) => {
+    const encrypted = req.body.message;
+    const sessionInfo = req.session.connector.sessionInfo;
+    if (!sessionInfo.orgId) {
+        return res.status(400).json({ error: 'Invalid session' });
+    }
+    const decrypted = decrypt(encrypted, sessionInfo.orgId);
+    res.json({ decrypted });
+});
+
+router.post('/common/genai', asyncHandler(async (req, res) => {
+    try {
+        const { encryptedApiKey, model, ...geminiPayload } = req.body;
+
+        logger.info('Received Gemini proxy request for model %s', model || 'gemini-3-flash-preview');
+
+        if (!encryptedApiKey) {
+            return res.status(400).json({ error: "Missing encrypted API key" });
+        }
+
+        const sessionInfo = req.session.connector.sessionInfo;
+        if (!sessionInfo.orgId) {
+            return res.status(400).json({ error: 'Invalid session' });
+        }
+        logger.info('Encrypted: %s', encryptedApiKey);
+        logger.info('OrgId: %s', sessionInfo.orgId);
+        // 1. Decrypt the user's key
+        const apiKey = decrypt(encryptedApiKey, sessionInfo.orgId);
+
+        logger.info('Decrypted API key: %s', apiKey);
+
+        const modelId = model || 'gemini-3-flash-preview';
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+
+        // 2. Forward to Gemini using your fetch wrapper
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(geminiPayload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            logger.error('Gemini API error: %s', JSON.stringify(data));
+        }
+
+        // 3. Return the exact response from Gemini
+        res.status(response.status).json(data);
+    } catch (err) {
+        console.error("Proxy Error:", err);
+        res.status(500).json({ error: "Internal Server Error", details: err.message });
+    }
 }));
 
 router.get('/metadata', asyncHandler(async (req, res) => {
@@ -114,7 +188,7 @@ router.get('/data/:objectType', asyncHandler(async (req, res, next) => {
         res.json(result);
     } catch (err) {
         logger.error('getData error', err);
-        return res.status(500).json({ 
+        return res.status(500).json({
             success: false,
             error: {
                 code: 'INTERNAL_SERVER_ERROR',
@@ -162,30 +236,30 @@ router.post('/api/send-email', asyncHandler(async (req, res) => {
 }));
 
 router.use((err, req, res, next) => {
-  console.error('[daquota proxy] internal error', err);
+    console.error('[daquota proxy] internal error', err);
 
-  // Salesforce (jsforce) errors often have `errorCode` and `message`
-  if (err.errorCode) {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: err.errorCode,
-        message: err.message,
-        fields: err.fields || []
-      }
-    });
-  }
+    // Salesforce (jsforce) errors often have `errorCode` and `message`
+    if (err.errorCode) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: err.errorCode,
+                message: err.message,
+                fields: err.fields || []
+            }
+        });
+    }
 
-  // Generic error fallback
-  if (!res.headersSent) {
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: err.message || 'Internal server error'
-      }
-    });
-  }
+    // Generic error fallback
+    if (!res.headersSent) {
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: err.message || 'Internal server error'
+            }
+        });
+    }
 });
 
 module.exports = router;

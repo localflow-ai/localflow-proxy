@@ -42,6 +42,14 @@ On server:
 pkill -f "node index.js"
 ./start-proxy.sh 
 
+# GENERATE ENCRYPTION KEY
+
+Generate your Master Key: 
+openssl rand -hex 32
+
+Environment Variables: Ensure your .env file is in the root directory and contains MASTER_ENCRYPTION_KEY=your_generated_hex_here.
+
+
 # Dev mode
 
 npm install --save-dev nodemon
