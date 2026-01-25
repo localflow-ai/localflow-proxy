@@ -227,7 +227,7 @@ class OdooConnector extends BaseConnector {
 
         switch (operator) {
           case '$like':
-            domain.push([key, 'ilike', operand.replace(/%/g, '')]);
+            domain.push([key, 'ilike', operand]);
             break;
           case '$neq':
             domain.push([key, '!=', operand === null ? false : operand]);
