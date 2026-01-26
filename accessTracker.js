@@ -14,16 +14,19 @@ if (!fs.existsSync(DATA_DIR)) {
     }
 }
 
-const WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+// Time window constants in milliseconds
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const WINDOW_24H = MS_PER_DAY;
+const WINDOW_7D = 7 * MS_PER_DAY;
+const WINDOW_30D = 30 * MS_PER_DAY;
 
 /**
  * Tracks access for a given user.
  * Reads the user's access file, updates the count and timestamps, and saves it back.
- * 
  * @param {string} userId 
  * @param {string} [resourceType='default']
  * @param {boolean} [readOnly=false]
- * @returns {Object} { resource, total, last24h }
+ * @returns {Object} { resource, total, last24h, last7d, last30d }
  */
 function trackAccess(userId, resourceType = 'default', readOnly = false) {
     // Sanitize userId to ensure valid filename
@@ -39,12 +42,11 @@ function trackAccess(userId, resourceType = 'default', readOnly = false) {
 
             // Migration: if root has timestamps, move to default
             if (Array.isArray(data.timestamps)) {
-                data = { default: { total: data.total, timestamps: data.timestamps } };
+                data = { [resourceType]: { total: data.total, timestamps: data.timestamps } };
             }
         }
     } catch (err) {
         logger.warn(`Error reading access log for user ${userId}: ${err.message}`);
-        // Continue with default data if file is corrupted or unreadable
     }
 
     const now = Date.now();
@@ -54,10 +56,10 @@ function trackAccess(userId, resourceType = 'default', readOnly = false) {
     }
     const bucket = data[resourceType];
 
-    // Prune timestamps older than 24 hours to keep the file size manageable
-    // while maintaining the sliding window data
+    // Prune timestamps older than 30 days to keep the file size manageable
+    // while maintaining enough data for our longest window
     if (Array.isArray(bucket.timestamps)) {
-        bucket.timestamps = bucket.timestamps.filter(ts => (now - ts) < WINDOW_MS);
+        bucket.timestamps = bucket.timestamps.filter(ts => (now - ts) < WINDOW_30D);
     } else {
         bucket.timestamps = [];
     }
@@ -67,7 +69,7 @@ function trackAccess(userId, resourceType = 'default', readOnly = false) {
         bucket.timestamps.push(now);
         bucket.total = (bucket.total || 0) + 1;
 
-        // Save back to file (synchronous to prevent race conditions on the specific user file)
+        // Save back to file
         try {
             fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
         } catch (err) {
@@ -76,10 +78,14 @@ function trackAccess(userId, resourceType = 'default', readOnly = false) {
         }
     }
 
+    // Calculate windowed counts
+    // Since we've already pruned anything > 30d, last30d is just the array length
     return {
         resource: resourceType,
         total: bucket.total,
-        last24h: bucket.timestamps.length
+        last24h: bucket.timestamps.filter(ts => (now - ts) < WINDOW_24H).length,
+        last7d: bucket.timestamps.filter(ts => (now - ts) < WINDOW_7D).length,
+        last30d: bucket.timestamps.length
     };
 }
 
