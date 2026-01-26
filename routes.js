@@ -133,7 +133,7 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
         // 1. Decrypt the user's key
         const apiKey = decrypt(encryptedApiKey, sessionInfo.orgId);
 
-        logger.info('Decrypted API key: %s', apiKey);
+        logger.info('Decrypted API key: %s', apiKey.replace(/.(?=.{4})/g, '*'));
 
         const modelId = model || 'gemini-3-flash-preview';
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
