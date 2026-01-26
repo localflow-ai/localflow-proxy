@@ -81,7 +81,8 @@ router.post('/session/object-type-mapping', (req, res) => {
 
 router.get('/common/access-stats', asyncHandler(async (req, res) => {
     const sessionInfo = req.session.connector.sessionInfo;
-    const userId = sessionInfo?.userId || sessionInfo?.username || 'unknown';
+    const scope = req.query.scope || 'default';
+    const userId = scope === 'org' ? 'org_' + sessionInfo.orgId : sessionInfo?.userId || sessionInfo?.username || 'unknown';
     const resource = req.query.resource;
     const readOnly = req.query.read === 'true';
 
