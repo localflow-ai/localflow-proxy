@@ -1,5 +1,12 @@
 const express = require('express');
+const cors = require('cors');
 const router = express.Router();
+
+router.use(cors({
+    origin: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token'],
+    credentials: true
+}));
 
 const { createSession, getSession } = require('./sessionManager.js');
 const { SalesforceConnector } = require('./connectors/salesforce.js');
@@ -40,10 +47,15 @@ router.post('/session', asyncHandler(async (req, res) => {
 }));
 
 router.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+        return next();
+    }
+
     logger.info('request %s %s', req.method, req.path);
-    const auth = req.headers.authorization;
+
+    const auth = req.headers['x-proxy-token']; 
     if (!auth || !auth.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Missing or invalid token' });
+        return res.status(401).json({ error: 'Missing or invalid proxy token' });
     }
 
     const token = auth.split(' ')[1];
@@ -54,9 +66,101 @@ router.use((req, res, next) => {
     }
 
     req.session = session;
-    //console.info('injected session', req.session);
     next();
 });
+
+/**
+ * API Proxy Endpoint
+ * Logic: Forwards request to target ?url=... while filtering sensitive headers
+ * Authenticated: Requires valid session token in Authorization header
+ */
+router.all('/common/api-proxy', asyncHandler(async (req, res) => {
+    const targetUrl = req.query.url;
+    if (!targetUrl) return res.status(400).json({ error: 'Missing target url' });
+
+    logger.info('Proxying %s: %s', req.method, targetUrl);
+
+    // --- REQUEST HEADERS (Port of applyRequestHeaders) ---
+    const forbiddenRequestHeaders = [
+        'host', 'referer', 'x-forwarded-for', 'x-real-ip', 'cookie', 
+        'connection', 'content-length' // Content-Length is recalculated by fetch
+    ];
+    
+    const requestHeaders = {};
+    Object.keys(req.headers).forEach(key => {
+        const lowerKey = key.toLowerCase();
+        if (!forbiddenRequestHeaders.includes(lowerKey) && 
+            !lowerKey.startsWith('sec-') && 
+            lowerKey !== 'x-proxy-token') {
+            requestHeaders[key] = req.headers[key];
+        }
+    });
+
+    // Forced User-Agent from your PHP script
+    requestHeaders['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36';
+
+    const fetchOptions = {
+        method: req.method,
+        headers: requestHeaders,
+        redirect: 'follow',
+        // This allows node-fetch to handle decompression but we must strip headers later
+        compress: true 
+    };
+
+    // --- BODY HANDLING ---
+    // Instead of JSON.stringify(req.body), we use the raw stream if possible
+    // or req.body if it's already parsed.
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        if (Object.keys(req.body).length > 0) {
+            fetchOptions.body = JSON.stringify(req.body);
+        }
+    }
+
+    try {
+        const response = await fetch(targetUrl, fetchOptions);
+
+        // --- RESPONSE HEADERS (Port of applyResponseHeaders) ---
+        res.status(response.status);
+
+        const forbiddenResponseHeaders = [
+            'access-control-allow-origin', 
+            'access-control-allow-credentials',
+            'access-control-allow-headers',
+            'access-control-allow-methods',
+            'transfer-encoding', 
+            'connection', 
+            'www-authenticate',
+            'content-encoding', // CRITICAL: node-fetch decompresses automatically
+            'content-length'    // CRITICAL: length changes after decompression
+        ];
+
+        response.headers.forEach((value, name) => {
+            const lowerName = name.toLowerCase();
+            // Mimic PHP: if (strpos('Access-Control', $value) !== false) continue;
+            if (lowerName.includes('access-control')) return;
+            
+            if (!forbiddenResponseHeaders.includes(lowerName)) {
+                res.setHeader(name, value);
+            }
+        });
+
+        // Ensure we don't send a default text/html content type if the target didn't provide one
+        if (!response.headers.has('content-type')) {
+            res.setHeader('Content-Type', '');
+        }
+
+        // --- STREAMING OUTPUT ---
+        if (req.method.toLowerCase() !== 'head') {
+            response.body.pipe(res);
+        } else {
+            res.end();
+        }
+
+    } catch (err) {
+        logger.error('Proxy Error: %s', err.message);
+        res.status(502).json({ error: 'Bad Gateway', message: err.message });
+    }
+}));
 
 router.get('/session', asyncHandler(async (req, res) => {
     const sessionInfo = await req.session.connector.getSessionInfo();
