@@ -53,9 +53,14 @@ router.use((req, res, next) => {
 
     logger.info('request %s %s', req.method, req.path);
 
-    const auth = req.headers['x-proxy-token']; 
+    const isProxyPath = req.path.includes('/common/api-proxy');
+    const headerName = isProxyPath ? 'x-proxy-token' : 'authorization';
+
+    const auth = req.headers[headerName]; 
     if (!auth || !auth.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Missing or invalid proxy token' });
+        return res.status(401).json({ 
+            error: `Missing or invalid token. Expected in header: ${headerName}` 
+        });
     }
 
     const token = auth.split(' ')[1];
