@@ -80,8 +80,25 @@ const configData = [
         ],
         description: "Get an address from coordinates in France.",
         prompt: `To reverse geocode an address in France, use the \`https://data.geopf.fr/geocodage/reverse\` endpoint.`
+  },
+  {
+        topic: "Photovoltaic Data",
+        name: "PVGIS (Photovoltaic Geographical Information System)",
+        id: "pvgis",
+        waitMs: "500",
+        baseUrl: ["https://re.jrc.ec.europa.eu/api"],
+        description: "PVGIS (Photovoltaic Geographical Information System), a service provided by the Joint Research Centre (JRC) of the European Commission.",
+        prompt: `Use PVGIS to get photovoltaic data.`
+  },
+  {
+        topic: "Administrative Boundaries",
+        name: "French Administrative Boundaries (geo.api.gouv.fr)",
+        id: "geo-api-gouv-fr",
+        waitMs: "100",
+        baseUrl: "https://geo.api.gouv.fr/",
+        description: "Get French administrative boundaries for communes, departments, regions, etc.",
+        prompt: `To get French administrative boundaries, use the https://geo.api.gouv.fr/ endpoints.`
   }
-  
 ];
 
 try {
