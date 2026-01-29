@@ -42,6 +42,12 @@ On server:
 pkill -f "node index.js"
 ./start-proxy.sh 
 
+# UPDATE API CONFIG
+
+Modify the build-api-config.js file, then type:
+
+node build-api-config.js
+
 # GENERATE ENCRYPTION KEY
 
 Generate your Master Key: 

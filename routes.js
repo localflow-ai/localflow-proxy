@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 
 router.use(cors({
@@ -16,6 +18,63 @@ const { encrypt, decrypt } = require('./encryption.js');
 
 const { getLogger } = require('./logging');
 const logger = getLogger('routes');
+
+const DESCRIPTORS_FILE = process.env.API_CONFIG_FILE || path.join(__dirname, 'api-config.json');
+let apiDescriptors = [];
+let lastLoadTime = 0;
+const nextAllowedTimes = new Map();
+
+function loadApiDescriptors() {
+    logger.debug('Loading API descriptors from %s', DESCRIPTORS_FILE);
+    if (!fs.existsSync(DESCRIPTORS_FILE)) {
+        logger.debug('API descriptors file does not exist');
+        return [];
+    }
+    try {
+        const stats = fs.statSync(DESCRIPTORS_FILE);
+        if (stats.mtimeMs > lastLoadTime) {
+            const content = fs.readFileSync(DESCRIPTORS_FILE, 'utf8');
+            apiDescriptors = JSON.parse(content);
+            lastLoadTime = stats.mtimeMs;
+            logger.info('Loaded API descriptors from %s', DESCRIPTORS_FILE);
+        }
+    } catch (err) {
+        logger.error('Failed to load API descriptors: %s', err.message);
+    }
+    return apiDescriptors;
+}
+
+/**
+ * Applies rewrite rules to a given URL.
+ * Supports 'replace' actions currently.
+ * * @param {string} url - The original URL string
+ * @param {Array} rewriteRules - Array of rule arrays
+ * @returns {string} - The rewritten URL
+ */
+const applyRewriteRules = (url, dataSource) => {
+    const rewriteRules = dataSource?.rewriteRules;
+    if (!rewriteRules) {
+        return url;
+    }
+    let rewrittenUrl = url;
+
+    // Iterate through each rule-set (the outer array)
+    rewriteRules.forEach(ruleSet => {
+        // Iterate through the flat rule-set in increments of 3
+        // [action, search, replace, action, search, replace...]
+        for (let i = 0; i < ruleSet.length; i += 3) {
+            const action = ruleSet[i];
+            const search = ruleSet[i + 1];
+            const replacement = ruleSet[i + 2];
+
+            if (action === 'replace') {
+                rewrittenUrl = rewrittenUrl.replace(search, replacement);
+            }
+        }
+    });
+
+    return rewrittenUrl;
+};
 
 const fetch = (...args) =>
     import('node-fetch').then(({ default: fetch }) => fetch(...args));
@@ -74,6 +133,19 @@ router.use((req, res, next) => {
     next();
 });
 
+router.get('/common/api-config', (req, res) => {
+    const descriptors = loadApiDescriptors();
+    res.json(descriptors.map(ds => ({
+        id: ds.id,
+        name: ds.name,
+        topic: ds.topic,
+        description: ds.description,
+        baseUrl: ds.baseUrl,
+        force: ds.force,
+        prompt: ds.prompt
+    })));
+});
+
 /**
  * API Proxy Endpoint
  * Logic: Forwards request to target ?url=... while filtering sensitive headers
@@ -83,7 +155,30 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'Missing target url' });
 
-    logger.info('Proxying %s: %s', req.method, targetUrl);
+    const descriptors = loadApiDescriptors();
+    const dataSource = descriptors.find(ds => {
+        const baseUrls = Array.isArray(ds.baseUrl) ? ds.baseUrl : [ds.baseUrl];
+        return baseUrls.some(u => targetUrl.startsWith(u));
+    });
+
+    if (!dataSource) {
+        return res.status(403).json({ error: 'Not allowed' });
+    }
+
+    if (dataSource.waitMs) {
+        const waitMs = parseInt(dataSource.waitMs, 10);
+        if (!isNaN(waitMs) && waitMs > 0) {
+            const now = Date.now();
+            let nextAllowed = nextAllowedTimes.get(dataSource.id) || 0;
+            if (nextAllowed < now) nextAllowed = now;
+            const waitTime = nextAllowed - now;
+            nextAllowedTimes.set(dataSource.id, nextAllowed + waitMs);
+            if (waitTime > 0) await new Promise(r => setTimeout(r, waitTime));
+        }
+    }
+
+    const finalUrl = applyRewriteRules(targetUrl, dataSource);
+    logger.info('Proxying %s: %s -> %s', req.method, targetUrl, finalUrl);
 
     // --- REQUEST HEADERS (Port of applyRequestHeaders) ---
     const forbiddenRequestHeaders = [
@@ -122,7 +217,7 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
     }
 
     try {
-        const response = await fetch(targetUrl, fetchOptions);
+        const response = await fetch(finalUrl, fetchOptions);
 
         // --- RESPONSE HEADERS (Port of applyResponseHeaders) ---
         res.status(response.status);
