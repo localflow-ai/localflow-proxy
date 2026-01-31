@@ -13,7 +13,7 @@
     ],
     "force": true,
     "description": "OpenStreetMap's OverPass API allows to access most data that can be put on a map worldwide. For example: roads, forests, buildings, rivers, lakes, infrastructures, ...",
-    "prompt": "Use OpenStreetMap's OverPass API (*HIGHLY PREFERED*) and Turf.js (available in `turf`). Example: find closest rivers and calculate distance."
+    "prompt": "Use OpenStreetMap's OverPass API (*HIGHLY PREFERED*) and Turf.js (available in `turf`). Example: find closest rivers and calculate distance. When using Overpass, remember the BBOX order is (south, west, north, east)."
   },
   {
     "name": "OSRM",
@@ -60,7 +60,7 @@
     ],
     "force": true,
     "description": "Open Meteo Elevation is a service to get the elevation worldwide.",
-    "prompt": "Use Open Meteo Elevation API when the analysis requires elevation on many objets. Example: show topology around a point."
+    "prompt": "Use Open Meteo Elevation API (available at `https://api.open-meteo.com/v1/elevation`) when the analysis requires elevation on many objets. Example: show topology around a point."
   },
   {
     "topic": "Reverse Geocoding",
@@ -90,7 +90,7 @@
       "https://re.jrc.ec.europa.eu/api"
     ],
     "description": "PVGIS (Photovoltaic Geographical Information System), a service provided by the Joint Research Centre (JRC) of the European Commission.",
-    "prompt": "Use PVGIS to get photovoltaic data."
+    "prompt": "Use PVGIS to get photovoltaic data. Available endpoints are documented at https://re.jrc.ec.europa.eu/api/v5_2/"
   },
   {
     "topic": "Administrative Boundaries",
