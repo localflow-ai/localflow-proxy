@@ -36,8 +36,8 @@ const configData = [
     topic: "Advanced",
     id: "ign",
     waitMs: "100",
-    baseUrl: 'https://data.geopf.fr/wfs/ows',
-    description: "The French IGN geo platform, which allows you to access any data in the IGN GIS. This is Open Data.",
+    baseUrl: ['https://data.geopf.fr/wfs/ows', 'https://wfs.geoportail-urbanisme.gouv.fr/wfs'],
+    description: "The French IGN geo platform, which allows you to access any data in the IGN GIS. This is Open Data. Note that `https://wfs.geoportail-urbanisme.gouv.fr` is deprecated but still active for backward compatibility.",
     prompt: `For France and very specific government data, use the IGN API 
     https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=wfs_sup:assiette_sup_s&BBOX=49.10,0.18,49.18,0.28&&OUTPUTFORMAT=application/json 
     and replace the type and bounding box parameters. 
