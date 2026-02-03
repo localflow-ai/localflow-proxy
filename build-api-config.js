@@ -29,7 +29,7 @@ const configData = [
     ],
     force: true,
     prompt: `Use OSRM to calculate distance and time by transportation. The base url is \`https://routing.openstreetmap.de\`.`,     
-    description: `OSRM is the Open Source engine for routing. It can be used to calculate inineraries or find the distance and time between two points by any transportation means.`
+    description: `OSRM is the Open Source engine for routing. It can be used to calculate itineraries or find the distance and time between two points by any transportation means.`
   },
   {
     name: "IGN",
