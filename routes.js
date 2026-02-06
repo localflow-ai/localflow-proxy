@@ -6,9 +6,11 @@ const router = express.Router();
 
 router.use(cors({
     origin: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token', 'X-Proxy-API-Key'],
     credentials: true
 }));
+router.use(express.json({ limit: '50mb' }));
+router.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const { createSession, getSession } = require('./sessionManager.js');
 const { SalesforceConnector } = require('./connectors/salesforce.js');
@@ -49,9 +51,10 @@ function loadApiDescriptors() {
  * Supports 'replace' actions currently.
  * * @param {string} url - The original URL string
  * @param {Array} rewriteRules - Array of rule arrays
+ * @param {string} apiKey - Optional API key for dynamic replacement
  * @returns {string} - The rewritten URL
  */
-const applyRewriteRules = (url, dataSource) => {
+const applyRewriteRules = (url, dataSource, apiKey) => {
     const rewriteRules = dataSource?.rewriteRules;
     if (!rewriteRules) {
         return url;
@@ -69,6 +72,9 @@ const applyRewriteRules = (url, dataSource) => {
 
             if (action === 'replace') {
                 rewrittenUrl = rewrittenUrl.replace(search, replacement);
+                if (apiKey && replacement.includes(dataSource.apiKeyRoutePlaceholder)) {
+                    rewrittenUrl = rewrittenUrl.replace(dataSource.apiKeyRoutePlaceholder, apiKey);
+                }
             }
         }
     });
@@ -142,7 +148,11 @@ router.get('/common/api-config', (req, res) => {
         description: ds.description,
         baseUrl: ds.baseUrl,
         force: ds.force,
-        prompt: ds.prompt
+        prompt: ds.prompt,
+        apiKeyQueryParam: ds.apiKeyQueryParam,
+        apiKeyHeader: ds.apiKeyHeader,
+        apiKeyRoutePlaceholder: ds.apiKeyRoutePlaceholder,
+        apiKey: ds.apiKey ? '***' : undefined, // Mask API key in response
     })));
 });
 
@@ -152,7 +162,7 @@ router.get('/common/api-config', (req, res) => {
  * Authenticated: Requires valid session token in Authorization header
  */
 router.all('/common/api-proxy', asyncHandler(async (req, res) => {
-    const targetUrl = req.query.url;
+    let targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'Missing target url' });
 
     const descriptors = loadApiDescriptors();
@@ -177,7 +187,29 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
         }
     }
 
-    const finalUrl = applyRewriteRules(targetUrl, dataSource);
+    const requestHeaders = {};
+
+    let apiKey = req.headers['x-proxy-api-key'];
+    if (dataSource.apiKeyQueryParam || dataSource.apiKeyHeader || dataSource.apiKeyRoutePlaceholder) {
+        if (!apiKey) {
+            apiKey = dataSource.apiKey;
+        } else {
+            apiKey = decrypt(apiKey, req.session.connector.sessionInfo.orgId);
+        }
+
+        if (apiKey) {
+            if (dataSource.apiKeyHeader) {
+                requestHeaders[dataSource.apiKeyHeader] = apiKey;
+            }
+            if (dataSource.apiKeyQueryParam) {
+                const url = new URL(targetUrl);
+                url.searchParams.set(dataSource.apiKeyQueryParam, apiKey);
+                targetUrl = url.toString();
+            }
+        }
+    }
+
+    const finalUrl = applyRewriteRules(targetUrl, dataSource, apiKey);
     logger.info('Proxying %s: %s -> %s', req.method, targetUrl, finalUrl);
 
     // --- REQUEST HEADERS (Port of applyRequestHeaders) ---
@@ -186,7 +218,6 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
         'connection', 'content-length' // Content-Length is recalculated by fetch
     ];
     
-    const requestHeaders = {};
     Object.keys(req.headers).forEach(key => {
         const lowerKey = key.toLowerCase();
         if (!forbiddenRequestHeaders.includes(lowerKey) && 
@@ -236,7 +267,6 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
 
         response.headers.forEach((value, name) => {
             const lowerName = name.toLowerCase();
-            // Mimic PHP: if (strpos('Access-Control', $value) !== false) continue;
             if (lowerName.includes('access-control')) return;
             
             if (!forbiddenResponseHeaders.includes(lowerName)) {
@@ -244,12 +274,10 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
             }
         });
 
-        // Ensure we don't send a default text/html content type if the target didn't provide one
         if (!response.headers.has('content-type')) {
             res.setHeader('Content-Type', '');
         }
 
-        // --- STREAMING OUTPUT ---
         if (req.method.toLowerCase() !== 'head') {
             response.body.pipe(res);
         } else {
