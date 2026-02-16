@@ -17,6 +17,8 @@ const { SalesforceConnector } = require('./connectors/salesforce.js');
 const { OdooConnector } = require('./connectors/odoo.js');
 const { trackAccess } = require('./accessTracker.js');
 const { encrypt, decrypt } = require('./encryption.js');
+const pdf = require('pdf-parse');
+const Bottleneck = require("bottleneck");
 
 const { getLogger } = require('./logging');
 const logger = getLogger('routes');
@@ -92,6 +94,22 @@ const connectorMap = {
 
 const asyncHandler = fn => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+// 1 request/sec, max 50 in queue, block the rest
+const limiter = new Bottleneck({
+  maxConcurrent: 1,                // Only process 1 at a time
+  minTime: 1000,                   // Wait at least 1s between starts
+  highWater: 50,                   // Max queue size
+  strategy: Bottleneck.strategy.BLOCK // Refuse (503) if queue > 50
+});
+
+const throttler = (req, res, next) => {
+  limiter.schedule(() => Promise.resolve())
+    .then(() => next())
+    .catch(() => {
+        res.status(503).json({ error: "Server busy. Please try again later." });
+    });
 };
 
 router.post('/session', asyncHandler(async (req, res) => {
@@ -391,6 +409,176 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
         res.status(500).json({ error: "Internal Server Error", details: err.message });
     }
 }));
+
+const normalizeForFuzzy = (str) => {
+    if (!str) return "";
+    return str.toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // Remove accents
+        .replace(/[^a-z0-9]/g, "");      // Remove punctuation/spaces
+};
+
+async function pagerender(pageData) {
+    const textContent = await pageData.getTextContent({
+        normalizeWhitespace: true,
+        disableCombineTextItems: false
+    });
+
+    const items = textContent.items.sort((a, b) => {
+        if (Math.abs(a.transform[5] - b.transform[5]) > 3) {
+            return b.transform[5] - a.transform[5];
+        }
+        return a.transform[4] - b.transform[4];
+    });
+
+    let lastY = -1;
+    let lastXEnd = -1;
+    let text = '';
+
+    for (let item of items) {
+        let str = item.str; 
+        if (!str.replace(/\s+/g, '')) continue; 
+
+        // --- DÉTECTION DU STYLE ---
+        const style = textContent.styles[item.fontName];
+        const fontName = style ? (style.fontFamily || "").toLowerCase() : "";
+        
+        const isBold = fontName.includes('bold') || fontName.includes('black') || fontName.includes('heavy');
+        const isItalic = fontName.includes('italic') || fontName.includes('oblique');
+
+        let styledStr = str;
+        if (isBold && isItalic) styledStr = `***${str.trim()}***`;
+        else if (isBold) styledStr = `**${str.trim()}**`;
+        else if (isItalic) styledStr = `*${str.trim()}*`;
+
+        const currentY = item.transform[5];
+        const currentX = item.transform[4];
+
+        // --- GESTION DES LIGNES ---
+        if (lastY !== -1 && Math.abs(currentY - lastY) > 3) {
+            text += (Math.abs(currentY - lastY) > 12) ? '\n\n' : '\n';
+            lastXEnd = -1; 
+        } 
+        
+        // --- ESPACES ---
+        if (lastXEnd !== -1 && (currentX - lastXEnd) > 1.0) {
+            if (!text.endsWith(' ') && !styledStr.startsWith(' ')) {
+                text += ' ';
+            }
+        }
+
+        // --- STRUCTURE ---
+        const isHeader = (str === str.toUpperCase() && str.length > 4) || /^[0-9A-Z]{1,2}[\.\-\)]\s/.test(str);
+        if (isHeader && (text.endsWith('\n\n') || text === '')) {
+            styledStr = `### ${styledStr}`;
+        }
+        if (/^[\u2022\u00b7\u25cf\-\*]/.test(str.trim())) {
+            styledStr = `- ${str.trim().substring(1).trim()}`;
+        }
+
+        text += styledStr;
+        lastY = currentY;
+        lastXEnd = currentX + (item.width || 0);
+    }
+
+    // 1. Fusionne les blocs de gras adjacents : **M****odification** -> **Modification**
+    // 2. Gère aussi les cas avec un espace : **M** **odification** -> **M modification**
+    return text
+        .replace(/\*\*\s*\*\*/g, '')  // Fusionne le gras
+        .replace(/\*\s*\*/g, '')      // Fusionne l'italique
+        .replace(/\*\*\*\s*\*\*\*/g, ''); // Fusionne le combo
+}
+
+router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
+    const { url, searchString } = req.body;
+    
+    if (!url) return res.status(400).json({ error: 'Missing PDF URL' });
+
+    // 1. Fetch PDF
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.statusText}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    const pagesContent = [];
+
+    // 2. Extraction via the optimized pagerender (Heuristics)
+    const options = {
+        pagerender: async (pageData) => {
+            const text = await pagerender(pageData); 
+            pagesContent.push({
+                text: text,
+                normalized: normalizeForFuzzy(text)
+            });
+            return text; 
+        }
+    };
+
+    const data = await pdf(buffer, options);
+
+    // 3. Multi-Criteria Search Logic
+    let finalContent = "";
+    const searchTerms = searchString 
+        ? (Array.isArray(searchString) ? searchString : searchString.split(','))
+            .map(term => normalizeForFuzzy(term.trim()))
+            .filter(term => term.length > 0)
+        : [];
+
+    if (searchTerms.length > 0) {
+        const matchedIndices = new Set();
+        pagesContent.forEach((page, i) => {
+            const hasMatch = searchTerms.some(term => page.normalized.includes(term));
+            if (hasMatch) {
+                if (i > 0) matchedIndices.add(i - 1); 
+                matchedIndices.add(i);                
+                if (i < pagesContent.length - 1) matchedIndices.add(i + 1);
+            }
+        });
+
+        const sortedIndices = Array.from(matchedIndices).sort((a, b) => a - b);
+        let lastIdx = -1;
+        sortedIndices.forEach(idx => {
+            if (lastIdx !== -1 && idx !== lastIdx + 1) {
+                finalContent += `\n\n---\n[Omitted Content: Pages ${lastIdx + 2} to ${idx}]\n---\n\n`;
+            }
+            finalContent += `## Page ${idx + 1}\n\n${pagesContent[idx].text}\n\n`;
+            lastIdx = idx;
+        });
+    } else {
+        finalContent = pagesContent.map((p, i) => `## Page ${i + 1}\n\n${p.text}`).join('\n\n');
+    }
+
+    // 4. Enhanced Response with Metadata
+    res.json({ 
+        success: true,
+        metadata: {
+            title: data.info?.Title || "Unknown",
+            author: data.info?.Author || "Unknown",
+            creator: data.info?.Creator || "Unknown",
+            producer: data.info?.Producer || "Unknown",
+            creationDate: data.info?.CreationDate || null,
+            modificationDate: data.info?.ModDate || null,
+            totalPdfPages: data.numpages
+        },
+        returnedPages: (finalContent.match(/## Page/g) || []).length,
+        content: finalContent.trim() || "No matches found for the given search criteria."
+    });
+}));
+
+router.get('/common/extract-pdf/status', (req, res) => {
+    const counts = limiter.counts(); // Gets internal bottleneck stats
+    
+    res.json({
+        active: counts.running,      // Should be 0 or 1 based on our maxConcurrent
+        queued: counts.queued,       // How many are currently waiting
+        capacityRemaining: 50 - counts.queued,
+        isFull: counts.queued >= 50,
+        settings: {
+            maxConcurrent: 1,
+            minTime: "1000ms",
+            queueLimit: 50
+        }
+    });
+});
 
 router.get('/metadata', asyncHandler(async (req, res) => {
     const result = await req.session.connector.listObjectTypes();
