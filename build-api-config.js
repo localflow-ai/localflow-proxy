@@ -36,7 +36,7 @@ const configData = [
         description: `OSRM is the Open Source engine for routing. It can be used to calculate itineraries or find the distance and time between two points by any transportation means.`
     },
     {
-        name: "IGN",
+        name: "Geoplateforme IGN",
         topic: "Advanced",
         id: "ign",
         waitMs: "100",
@@ -58,6 +58,30 @@ Available geojson data are (*IMPORTANT*: do not try other types unless given to 
 * \`LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape\`, 
 * \`BDTOPO_V3:terrain_de_sport\`, 
 * \`BDTOPO_V3:zone_de_vegetation\``
+    },
+    {
+        name: "APICarto",
+        topic: "Advanced",
+        id: "apicarto",
+        waitMs: "100",
+        baseUrl: 'https://apicarto.ign.fr/api',
+        description: `
+L'API Carto est une API OpenData IGN.
+
+## 🛠 Les modules disponibles
+
+| Module | Description | Lien |
+| :--- | :--- | :--- |
+| **Cadastre** | Accès aux données cadastrales (commune, division, parcelle, etc.). | [Documentation API](./cadastre) |
+| **Limites Administratives** | Récupération des données administratives (commune, département, région). | [Documentation API](./limites-administratives) |
+| **Codes Postaux** | Récupération des communes en fonction d'un code postal. | [Documentation API](./codes-postaux) |
+| **Urbanisme (GpU)** | Accès aux données du Géoportail de l'Urbanisme (PLU, POS, CC, SUP). | [Documentation API](./gpu) |
+| **RPG** | Accès aux données du Registre Parcellaire Graphique (cultures). | [Documentation API](./rpg) |
+| **WFS-Geoportail** | Accès générique à n'importe quel flux WFS du Géoportail. | [Documentation API](./wfs-geoportail) |
+| **Nature** | Accès aux flux s'appuyant sur des données du MNHN. | [Documentation API](./nature) |
+| **AOC** | Accès aux données des Appellations d'Origine Contrôlée. | [Documentation API](./aoc) |
+        `,
+        prompt: `For France and specific government data, use the APICarto API (https://apicarto.ign.fr/api) with the appropriate module (cadastre, limites-administratives, codes-postaux, gpu, rpg, wfs-geoportail, nature, aoc). Each module API is available at https://apicarto.ign.fr/api/{module} and documented at https://apicarto.ign.fr/api/doc/{module}.`
     },
     {
         topic: "Elevation",

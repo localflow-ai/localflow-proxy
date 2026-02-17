@@ -42,7 +42,7 @@
     "description": "OSRM is the Open Source engine for routing. It can be used to calculate itineraries or find the distance and time between two points by any transportation means."
   },
   {
-    "name": "IGN",
+    "name": "Geoplateforme IGN",
     "topic": "Advanced",
     "id": "ign",
     "waitMs": "100",
@@ -52,6 +52,15 @@
     ],
     "description": "The French IGN geo platform, which allows you to access any data in the IGN GIS. This is Open Data. Note that `https://wfs.geoportail-urbanisme.gouv.fr` is deprecated but still active for backward compatibility.",
     "prompt": "For France and very specific government data, use the IGN API https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=wfs_sup:assiette_sup_s&BBOX=49.10,0.18,49.18,0.28&&OUTPUTFORMAT=application/json and replace the type and bounding box parameters. \n    \nAvailable geojson data are (*IMPORTANT*: do not try other types unless given to you by the user): \n* `CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle` : parcelles. Example for properties in returned features: {\"gid\":77759101,\"numero\":\"0067\",\"feuille\":1,\"section\":\"AW\",\"code_dep\":\"14\",\"nom_com\":\"Lisieux\",\"code_com\":\"366\",\"com_abs\":\"000\",\"code_arr\":\"000\",\"idu\":\"14366000AW0067\",\"contenance\":112,\"code_insee\":\"14366\"},\n* `wfs_du:zone_urba` : Plan Local d'Urbanisme (PLU). Example for properties in returned features: {\"gid\":3106227,\"gpu_doc_id\":\"426a9c9d28a6850c0f9dacea82896315\",\"gpu_status\":\"production\",\"gpu_timestamp\":\"2025-10-03T06:26:39.185Z\",\"partition\":\"DU_200069532_C\",\"libelle\":\"UE\",\"libelong\":\"pavillonnaire diffus\",\"typezone\":\"U\",\"destdomi\":null,\"nomfic\":\"200069532_reglement_20250327_C.pdf\"},\n* `wfs_sup:assiette_sup_s` servitudes d'utilité publiques,\n* `BDTOPO_V3:foret_publique`, \n* `BDCARTO_V5:construction_surfacique`, \n* `BDCARTO_V5:occupation_du_sol`, \n* `BDCARTO_V5:rond_point`, \n* `BDCARTO_V5:transport_par_cable`, \n* `BDCARTO_V5:zone_d_activite_ou_d_interet`, \n* `BDCARTO_V5:zone_d_habitation`, \n* `LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape`, \n* `BDTOPO_V3:terrain_de_sport`, \n* `BDTOPO_V3:zone_de_vegetation`"
+  },
+  {
+    "name": "APICarto",
+    "topic": "Advanced",
+    "id": "apicarto",
+    "waitMs": "100",
+    "baseUrl": "https://apicarto.ign.fr/api",
+    "description": "\nL'API Carto est une API OpenData IGN.\n\n## 🛠 Les modules disponibles\n\n| Module | Description | Lien |\n| :--- | :--- | :--- |\n| **Cadastre** | Accès aux données cadastrales (commune, division, parcelle, etc.). | [Documentation API](./cadastre) |\n| **Limites Administratives** | Récupération des données administratives (commune, département, région). | [Documentation API](./limites-administratives) |\n| **Codes Postaux** | Récupération des communes en fonction d'un code postal. | [Documentation API](./codes-postaux) |\n| **Urbanisme (GpU)** | Accès aux données du Géoportail de l'Urbanisme (PLU, POS, CC, SUP). | [Documentation API](./gpu) |\n| **RPG** | Accès aux données du Registre Parcellaire Graphique (cultures). | [Documentation API](./rpg) |\n| **WFS-Geoportail** | Accès générique à n'importe quel flux WFS du Géoportail. | [Documentation API](./wfs-geoportail) |\n| **Nature** | Accès aux flux s'appuyant sur des données du MNHN. | [Documentation API](./nature) |\n| **AOC** | Accès aux données des Appellations d'Origine Contrôlée. | [Documentation API](./aoc) |\n        ",
+    "prompt": "For France and specific government data, use the APICarto API (https://apicarto.ign.fr/api) with the appropriate module (cadastre, limites-administratives, codes-postaux, gpu, rpg, wfs-geoportail, nature, aoc). Each module API is available at https://apicarto.ign.fr/api/{module} and documented at https://apicarto.ign.fr/api/doc/{module}."
   },
   {
     "topic": "Elevation",
