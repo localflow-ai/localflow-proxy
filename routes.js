@@ -9,12 +9,11 @@ router.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token', 'X-Proxy-API-Key'],
     credentials: true
 }));
-router.use(express.json({ limit: '50mb' }));
-router.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const { createSession, getSession } = require('./sessionManager.js');
 const { SalesforceConnector } = require('./connectors/salesforce.js');
 const { OdooConnector } = require('./connectors/odoo.js');
+const { PublicConnector } = require('./connectors/public.js');
 const { trackAccess } = require('./accessTracker.js');
 const { encrypt, decrypt } = require('./encryption.js');
 const pdf = require('pdf-parse');
@@ -89,7 +88,8 @@ const fetch = (...args) =>
 
 const connectorMap = {
     salesforce: SalesforceConnector,
-    odoo: OdooConnector
+    odoo: OdooConnector,
+    public: PublicConnector
 };
 
 const asyncHandler = fn => (req, res, next) => {
@@ -112,7 +112,22 @@ const throttler = (req, res, next) => {
     });
 };
 
-router.post('/session', asyncHandler(async (req, res) => {
+// Create a group of limiters
+const publicGroup = new Bottleneck.Group({
+  reservoir: 100,           // Initial "tokens" (max calls)
+  reservoirRefreshAmount: 100, 
+  reservoirRefreshInterval: 60 * 60 * 1000, // Reset every hour
+  
+  // Strategy: fail immediately when the reservoir is empty
+  rejectOnDrop: true 
+});
+
+// Optional: Log when an IP is blocked
+publicGroup.on('failed', (error, jobInfo) => {
+    logger.warn('Rate limit job failed for IP: %s', jobInfo.options.id);
+});
+
+router.post('/session', express.json(), asyncHandler(async (req, res) => {
     const { type, config } = req.body;
     logger.info('create new session', type);
     const ConnectorClass = connectorMap[type?.toLowerCase()];
@@ -129,7 +144,7 @@ router.post('/session', asyncHandler(async (req, res) => {
     }
 }));
 
-router.use((req, res, next) => {
+router.use(async (req, res, next) => {
     if (req.method === 'OPTIONS') {
         return next();
     }
@@ -153,25 +168,26 @@ router.use((req, res, next) => {
         return res.status(403).json({ error: 'Session expired or invalid' });
     }
 
+    // --- Limiter for public connector ---
+    if (session.type === 'public') {
+        const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        
+        try {
+            // schedule() will check the reservoir for this specific IP limiter
+            // If the IP has exceeded 100 calls, it will throw a Bottleneck Error
+            await publicGroup.key(clientIp).schedule(() => Promise.resolve());
+        } catch (err) {
+            logger.warn('Rate limit triggered for IP %s', clientIp);
+            return res.status(429).json({ 
+                error: 'Too many requests', 
+                detail: 'Public session rate limit exceeded.' 
+            });
+        }
+    }
+    // ---------------------------------
+
     req.session = session;
     next();
-});
-
-router.get('/common/api-config', (req, res) => {
-    const descriptors = loadApiDescriptors();
-    res.json(descriptors.map(ds => ({
-        id: ds.id,
-        name: ds.name,
-        topic: ds.topic,
-        description: ds.description,
-        baseUrl: ds.baseUrl,
-        force: ds.force,
-        prompt: ds.prompt,
-        apiKeyQueryParam: ds.apiKeyQueryParam,
-        apiKeyHeader: ds.apiKeyHeader,
-        apiKeyRoutePlaceholder: ds.apiKeyRoutePlaceholder,
-        apiKey: ds.apiKey ? '***' : undefined, // Mask API key in response
-    })));
 });
 
 /**
@@ -179,7 +195,7 @@ router.get('/common/api-config', (req, res) => {
  * Logic: Forwards request to target ?url=... while filtering sensitive headers
  * Authenticated: Requires valid session token in Authorization header
  */
-router.all('/common/api-proxy', asyncHandler(async (req, res) => {
+router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asyncHandler(async (req, res) => {
     let targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'Missing target url' });
 
@@ -230,10 +246,9 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
     const finalUrl = applyRewriteRules(targetUrl, dataSource, apiKey);
     logger.info('Proxying %s: %s -> %s', req.method, targetUrl, finalUrl);
 
-    // --- REQUEST HEADERS (Port of applyRequestHeaders) ---
     const forbiddenRequestHeaders = [
         'host', 'referer', 'x-forwarded-for', 'x-real-ip', 'cookie', 
-        'connection', 'content-length' // Content-Length is recalculated by fetch
+        'connection', 'content-length'
     ];
     
     Object.keys(req.headers).forEach(key => {
@@ -245,30 +260,21 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
         }
     });
 
-    // Forced User-Agent from your PHP script
     requestHeaders['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36';
 
     const fetchOptions = {
         method: req.method,
         headers: requestHeaders,
         redirect: 'follow',
-        // This allows node-fetch to handle decompression but we must strip headers later
         compress: true 
     };
 
-    // --- BODY HANDLING ---
-    // Instead of JSON.stringify(req.body), we use the raw stream if possible
-    // or req.body if it's already parsed.
-    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-        if (Object.keys(req.body).length > 0) {
-            fetchOptions.body = JSON.stringify(req.body);
-        }
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.body && req.body.length > 0) {
+        fetchOptions.body = req.body;
     }
 
     try {
         const response = await fetch(finalUrl, fetchOptions);
-
-        // --- RESPONSE HEADERS (Port of applyResponseHeaders) ---
         res.status(response.status);
 
         const forbiddenResponseHeaders = [
@@ -279,14 +285,13 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
             'transfer-encoding', 
             'connection', 
             'www-authenticate',
-            'content-encoding', // CRITICAL: node-fetch decompresses automatically
-            'content-length'    // CRITICAL: length changes after decompression
+            'content-encoding',
+            'content-length'
         ];
 
         response.headers.forEach((value, name) => {
             const lowerName = name.toLowerCase();
             if (lowerName.includes('access-control')) return;
-            
             if (!forbiddenResponseHeaders.includes(lowerName)) {
                 res.setHeader(name, value);
             }
@@ -307,6 +312,26 @@ router.all('/common/api-proxy', asyncHandler(async (req, res) => {
         res.status(502).json({ error: 'Bad Gateway', message: err.message });
     }
 }));
+
+router.use(express.json({ limit: '50mb' }));
+router.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+router.get('/common/api-config', (req, res) => {
+    const descriptors = loadApiDescriptors();
+    res.json(descriptors.map(ds => ({
+        id: ds.id,
+        name: ds.name,
+        topic: ds.topic,
+        description: ds.description,
+        baseUrl: ds.baseUrl,
+        force: ds.force,
+        prompt: ds.prompt,
+        apiKeyQueryParam: ds.apiKeyQueryParam,
+        apiKeyHeader: ds.apiKeyHeader,
+        apiKeyRoutePlaceholder: ds.apiKeyRoutePlaceholder,
+        apiKey: ds.apiKey ? '***' : undefined, // Mask API key in response
+    })));
+});
 
 router.get('/session', asyncHandler(async (req, res) => {
     const sessionInfo = await req.session.connector.getSessionInfo();

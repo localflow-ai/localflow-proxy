@@ -9,8 +9,8 @@
     "rewriteRules": [
       [
         "replace",
-        "https://overpass-api.de/api/interpreter?",
-        "https://overpass.geofabrik.de/{apiKey}/api/interpreter?"
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.geofabrik.de/{apiKey}/api/interpreter"
       ]
     ],
     "force": true,
@@ -19,7 +19,7 @@
   },
   {
     "name": "OSRM",
-    "Topic": "Routing",
+    "topic": "Routing",
     "id": "osrm",
     "baseUrl": [
       "https://routing.openstreetmap.de",

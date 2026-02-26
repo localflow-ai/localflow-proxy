@@ -1,12 +1,19 @@
 const crypto = require('crypto');
-require('dotenv').config();
+const path = require('path');
+// Explicitly point to the .env in the project root
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
-const MASTER_KEY = Buffer.from(process.env.MASTER_ENCRYPTION_KEY, 'hex');
+const keyHex = process.env.MASTER_ENCRYPTION_KEY;
+if (!keyHex) {
+    throw new Error("MASTER_ENCRYPTION_KEY is not defined in environment variables");
+}
+const MASTER_KEY = Buffer.from(keyHex, 'hex');
 const ALGORITHM = 'aes-256-gcm';
 
 function getOrgKey(orgId) {
+    // Better way to combine Buffer and String for hashing
     return crypto.createHash('sha256')
-        .update(MASTER_KEY + orgId)
+        .update(Buffer.concat([MASTER_KEY, Buffer.from(orgId)]))
         .digest();
 }
 

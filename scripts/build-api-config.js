@@ -1,3 +1,5 @@
+// Usage: node scripts/build-api-config.js
+
 const fs = require('fs');
 const path = require('path');
 
@@ -11,7 +13,7 @@ const configData = [
         apiKey: 'fa30b3dbaceb457ba9748173ff24da48',
         rewriteRules: [
             [
-                'replace', 'https://overpass-api.de/api/interpreter?', 'https://overpass.geofabrik.de/{apiKey}/api/interpreter?'
+                'replace', 'https://overpass-api.de/api/interpreter', 'https://overpass.geofabrik.de/{apiKey}/api/interpreter'
             ]
         ],
         force: true,
@@ -20,7 +22,7 @@ const configData = [
     },
     {
         name: "OSRM",
-        Topic: "Routing",
+        topic: "Routing",
         id: "osrm",
         baseUrl: ['https://routing.openstreetmap.de', 'https://router.project-osrm.org'],
         apiKeyRoutePlaceholder: '{apiKey}',
@@ -306,8 +308,11 @@ The Sirene API provides access to the French National Register of Businesses and
 
 try {
     const jsonContent = JSON.stringify(configData, null, 2);
-    fs.writeFileSync(path.join(__dirname, 'api-config.json'), jsonContent, 'utf8');
-    console.log('✅ Success: api-config.json has been generated.');
+    // Use '..' to go up one level from the 'scripts' folder
+    const outputPath = path.join(__dirname, '..', 'api-config.json');
+    
+    fs.writeFileSync(outputPath, jsonContent, 'utf8');
+    console.log(`✅ Success: api-config.json has been generated at: ${outputPath}`);
 } catch (error) {
     console.error('❌ Error generating JSON:', error.message);
     process.exit(1);
