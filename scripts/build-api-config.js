@@ -29,6 +29,8 @@ const configData = [
         apiKey: '308fc7330c8c4e54a89a995eb2bb4fee',
         rewriteRules: [
             [
+                'replace', 'https://routing.openstreetmap.de/routed-car/route/', 'https://routing.geofabrik.de/{apiKey}/route/',
+                'replace', 'https://router.project-osrm.org/routed-car/route/', 'https://routing.geofabrik.de/{apiKey}/route/',
                 'replace', 'https://routing.openstreetmap.de/', 'https://routing.geofabrik.de/{apiKey}/',
                 'replace', 'https://router.project-osrm.org', 'https://routing.geofabrik.de/{apiKey}/'
             ]
@@ -45,7 +47,9 @@ const configData = [
         baseUrl: ['https://data.geopf.fr/wfs/ows', 'https://wfs.geoportail-urbanisme.gouv.fr/wfs'],
         description: "The French IGN geo platform, which allows you to access any data in the IGN GIS. This is Open Data. Note that `https://wfs.geoportail-urbanisme.gouv.fr` is deprecated but still active for backward compatibility.",
         prompt: `For France and very specific government data, use the IGN API https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=wfs_sup:assiette_sup_s&BBOX=49.10,0.18,49.18,0.28&&OUTPUTFORMAT=application/json and replace the type and bounding box parameters. 
-    
+
+When you call the service, be extra careful about the coordinates order of the BBOX parameter and of the values returned to make sure they are in the order expected by JS and turf.js.
+
 Available geojson data are (*IMPORTANT*: do not try other types unless given to you by the user): 
 * \`CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle\` : parcelles. Example for properties in returned features: {"gid":77759101,"numero":"0067","feuille":1,"section":"AW","code_dep":"14","nom_com":"Lisieux","code_com":"366","com_abs":"000","code_arr":"000","idu":"14366000AW0067","contenance":112,"code_insee":"14366"},
 * \`wfs_du:zone_urba\` : Plan Local d'Urbanisme (PLU). Example for properties in returned features: {"gid":3106227,"gpu_doc_id":"426a9c9d28a6850c0f9dacea82896315","gpu_status":"production","gpu_timestamp":"2025-10-03T06:26:39.185Z","partition":"DU_200069532_C","libelle":"UE","libelong":"pavillonnaire diffus","typezone":"U","destdomi":null,"nomfic":"200069532_reglement_20250327_C.pdf"},
@@ -58,6 +62,8 @@ Available geojson data are (*IMPORTANT*: do not try other types unless given to 
 * \`BDCARTO_V5:zone_d_activite_ou_d_interet\`, 
 * \`BDCARTO_V5:zone_d_habitation\`, 
 * \`LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape\`, 
+* \`PROTECTEDAREAS.APB:apb\` : arrêtés de protection de biotope,
+* \`patrinat_ramsar:pnm\` : zone humide d'importance internationale (Ramsar),
 * \`BDTOPO_V3:terrain_de_sport\`, 
 * \`BDTOPO_V3:zone_de_vegetation\``
     },
