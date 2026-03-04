@@ -115,8 +115,8 @@ const throttler = (req, res, next) => {
 // Create a group of limiters
 const publicGroup = new Bottleneck.Group({
   reservoir: 100,           // Initial "tokens" (max calls)
-  reservoirRefreshAmount: 100, 
-  reservoirRefreshInterval: 60 * 60 * 1000, // Reset every hour
+  reservoirRefreshAmount: 25, 
+  reservoirRefreshInterval: 60 * 60 * 1000 * 24, // Reset every 24 hours
   
   // Strategy: fail immediately when the reservoir is empty
   rejectOnDrop: true 
