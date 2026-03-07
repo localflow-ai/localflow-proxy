@@ -25,7 +25,8 @@ class OdooConnector extends BaseConnector {
         }
         logger.info(`authenticated to Odoo ${url} with uid ${uid}`);
         this.sessionInfo.userId = uid;
-        this.odoo.uid = uid; // Store for later use
+        this.sessionInfo.orgId = 'odoo-' + db;
+        this.odoo.uid = uid;
         resolve();
       });
     });
