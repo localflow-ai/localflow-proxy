@@ -144,6 +144,33 @@ router.post('/session', express.json(), asyncHandler(async (req, res) => {
     }
 }));
 
+router.post('/external-signup', express.json(), asyncHandler(async (req, res) => {
+    const { tenant, login, password, token } = req.body;
+
+    try {
+        const odoo = new OdooConnector();
+        
+        await odoo.login({
+            url: `https://odoo.localflow.fr`,
+            db: tenant,
+            username: 'renaud.pawlak@localflow.fr', 
+            password: '***REMOVED***' // 'nur1A' + tenant + '*'
+        });
+
+        const result = await odoo.execute_kw('res.users', 'signup', [
+            [
+                { login: login, password: password },
+                token
+            ],
+        ]);
+
+        res.json({ success: true, result });
+    } catch (err) {
+        // Odoo returns errors if the token is expired or login is wrong
+        res.status(400).json({ error: err.message });
+    }
+}));
+
 router.use(async (req, res, next) => {
     if (req.method === 'OPTIONS') {
         return next();
