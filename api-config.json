@@ -48,16 +48,46 @@
     "description": "OSRM is the Open Source engine for routing. It can be used to calculate itineraries or find the distance and time between two points by any transportation means."
   },
   {
-    "name": "Geoplateforme IGN",
-    "topic": "Advanced",
+    "name": "IGN Geoplateforme",
+    "topic": "Advanced French GIS",
     "id": "ign",
     "waitMs": "100",
     "baseUrl": [
+      "https://data.geopf.fr/geocodage/search",
+      "https://data.geopf.fr/geocodage/reverse",
+      "https://data.geopf.fr/altimetrie/v1/elevation",
+      "https://data.geopf.fr/navigation/itineraire",
       "https://data.geopf.fr/wfs/ows",
-      "https://wfs.geoportail-urbanisme.gouv.fr/wfs"
+      "https://wfs.geoportail-urbanisme.gouv.fr/wfs",
+      "https://api-adresse.data.gouv.fr/search",
+      "https://api-adresse.data.gouv.fr/reverse"
     ],
-    "description": "The French IGN geo platform, which allows you to access any data in the IGN GIS. This is Open Data. Note that `https://wfs.geoportail-urbanisme.gouv.fr` is deprecated but still active for backward compatibility.",
-    "prompt": "For France and very specific government data, use the IGN API https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=wfs_sup:assiette_sup_s&BBOX=49.10,0.18,49.18,0.28&&OUTPUTFORMAT=application/json and replace the type and bounding box parameters. \n\nWhen you call the service, be extra careful about the coordinates order of the BBOX parameter and of the values returned to make sure they are in the order expected by JS and turf.js.\n\nAvailable geojson data are (*IMPORTANT*: do not try other types unless given to you by the user): \n* `CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle` : parcelles. Example for properties in returned features: {\"gid\":77759101,\"numero\":\"0067\",\"feuille\":1,\"section\":\"AW\",\"code_dep\":\"14\",\"nom_com\":\"Lisieux\",\"code_com\":\"366\",\"com_abs\":\"000\",\"code_arr\":\"000\",\"idu\":\"14366000AW0067\",\"contenance\":112,\"code_insee\":\"14366\"},\n* `wfs_du:zone_urba` : Plan Local d'Urbanisme (PLU). Example for properties in returned features: {\"gid\":3106227,\"gpu_doc_id\":\"426a9c9d28a6850c0f9dacea82896315\",\"gpu_status\":\"production\",\"gpu_timestamp\":\"2025-10-03T06:26:39.185Z\",\"partition\":\"DU_200069532_C\",\"libelle\":\"UE\",\"libelong\":\"pavillonnaire diffus\",\"typezone\":\"U\",\"destdomi\":null,\"nomfic\":\"200069532_reglement_20250327_C.pdf\"},\n* `wfs_sup:assiette_sup_s` servitudes d'utilité publiques,\n* `BDTOPO_V3:foret_publique`, \n* `BDCARTO_V5:construction_surfacique`, \n* `BDCARTO_V5:occupation_du_sol`, \n* `BDCARTO_V5:rond_point`, \n* `BDCARTO_V5:transport_par_cable`, \n* `BDCARTO_V5:zone_d_activite_ou_d_interet`, \n* `BDCARTO_V5:zone_d_habitation`, \n* `LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape`, \n* `PROTECTEDAREAS.APB:apb` : arrêtés de protection de biotope,\n* `patrinat_ramsar:pnm` : zone humide d'importance internationale (Ramsar),\n* `BDTOPO_V3:terrain_de_sport`, \n* `BDTOPO_V3:zone_de_vegetation`"
+    "rewriteRules": [
+      [
+        "replace",
+        "https://api-adresse.data.gouv.fr/search",
+        "https://data.geopf.fr/geocodage/search",
+        "replace",
+        "https://api-adresse.data.gouv.fr/reverse",
+        "https://data.geopf.fr/geocodage/reverse",
+        "replace",
+        "https://wfs.geoportail-urbanisme.gouv.fr/wfs",
+        "https://data.geopf.fr/wfs/ows"
+      ]
+    ],
+    "description": "This is the primary hub for French public geographic data. It provides access to:\n        - **Geocoding & Search**: Convert text addresses or POIs into coordinates.\n        - **Reverse Geocoding**: Find addresses or cadastral parcels near a GPS point.\n        - **WFS Vector Layers**: Access official databases for Cadastre (parcels), Urban Planning (PLU), Hydrography, and Forestry.\n        - **Altimetry**: Get precise ground elevation (Z) for coordinates.\n        - **Routing**: Calculate itineraries for cars, pedestrians, or emergency vehicles.",
+    "prompt": "When using the IGN Geoplateforme, choose the sub-route based on the specific intent:\n\n| Path | Endpoint | Parameters | Schema |\n| :--- | :--- | :--- | :--- |\n| /geocodage/search | Geocoding (Text to GPS) | q, index (address, poi, parcel), limit, postcode, type (housenumber, street, locality, municipality) | GeoJSONFC |\n| /geocodage/reverse | Reverse Geocoding | lat, lon, index (address, poi, parcel), limit, search_radius | GeoJSONFC |\n| /wfs/ows | Vector Data (WFS) | SERVICE=WFS, VERSION=2.0.0, REQUEST=GetFeature, TYPENAMES, BBOX, OUTPUTFORMAT=application/json | GeoJSONFC |\n| /altimetrie/v1/elevation | Elevation (Z) | lon, lat, resource (ign_rge_alti_wld), delimiter, indent | ElevationRes |\n| /navigation/itineraire | Routing (Itinerary) | start, end, resource (bdtopo-osrm, bdtopo-valhalla), profile (car, pedestrian), optimization (fastest, shortest), getSteps, getGeometry | RoutingRes |\n\n### Response Schemas\n```typescript\n// Standard GeoJSON FeatureCollection used by Geocoding and WFS\ninterface GeoJSONFC {\n  type: \"FeatureCollection\";\n  features: Array<{\n    type: \"Feature\";\n    geometry: { type: \"Point\" | \"Polygon\" | \"MultiPolygon\"; coordinates: any };\n    properties: Record<string, any>; // label, city, postcode, idu (for parcels)\n  }>;\n}\n\n// Elevation Response\ninterface ElevationRes {\n  elevations: Array<{ lon: number; lat: number; z: number; acc: number }>;\n}\n\n// Routing Response\ninterface RoutingRes {\n  geometry: { type: \"LineString\"; coordinates: [number, number][] };\n  distance: number; // in meters\n  duration: number; // in seconds\n  portion: Array<{ distance: number; duration: number; steps: any[] }>;\n}\n```\n\nAvailable WFS layers to be used in the TYPENAMES param include (*IMPORTANT*: do not try other types unless given to you by the user):\n* `CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle` : parcelles. Example for properties in returned features: {\"gid\":77759101,\"numero\":\"0067\",\"feuille\":1,\"section\":\"AW\",\"code_dep\":\"14\",\"nom_com\":\"Lisieux\",\"code_com\":\"366\",\"com_abs\":\"000\",\"code_arr\":\"000\",\"idu\":\"14366000AW0067\",\"contenance\":112,\"code_insee\":\"14366\"},\n* `wfs_du:zone_urba` : Plan Local d'Urbanisme (PLU). Example for properties in returned features: {\"gid\":3106227,\"gpu_doc_id\":\"426a9c9d28a6850c0f9dacea82896315\",\"gpu_status\":\"production\",\"gpu_timestamp\":\"2025-10-03T06:26:39.185Z\",\"partition\":\"DU_200069532_C\",\"libelle\":\"UE\",\"libelong\":\"pavillonnaire diffus\",\"typezone\":\"U\",\"destdomi\":null,\"nomfic\":\"200069532_reglement_20250327_C.pdf\"},\n* `wfs_sup:assiette_sup_s` servitudes d'utilité publiques,\n* `BDTOPO_V3:foret_publique`, \n* `BDCARTO_V5:construction_surfacique`, \n* `BDCARTO_V5:occupation_du_sol`, \n* `BDCARTO_V5:rond_point`, \n* `BDCARTO_V5:transport_par_cable`, \n* `BDCARTO_V5:zone_d_activite_ou_d_interet`, \n* `BDCARTO_V5:zone_d_habitation`, \n* `LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape`, \n* `PROTECTEDAREAS.APB:apb` : arrêtés de protection de biotope,\n* `patrinat_ramsar:pnm` : zone humide d'importance internationale (Ramsar),\n* `BDTOPO_V3:terrain_de_sport`, \n* `BDTOPO_V3:zone_de_vegetation`\n\nIMPORTANT: \n- Coordinate Order: Geocoding and WFS GeoJSON return [Longitude, Latitude]. \n- WFS BBOX is [LatMin, LonMin, LatMax, LonMax]\n- Parameter naming: Use `lon` for geocoding/elevation and `lon,lat` strings for routing.\n\n```\n"
+  },
+  {
+    "topic": "Routing",
+    "name": "IGN Isochrone",
+    "id": "ign-isochrone",
+    "waitMs": "100",
+    "baseUrl": [
+      "https://data.geopf.fr/navigation/isochrone"
+    ],
+    "description": "Calculates isochrones (areas reachable within a given time) or isodistances (areas reachable within a given distance) across France using OSRM or Valhalla engines.",
+    "prompt": "To calculate an accessibility zone (isochrone/isodistance) in France, use the endpoint `https://data.geopf.fr/navigation/isochrone`.\n\n### REQUIRED PARAMETERS\n- **point**: Starting coordinates formatted as `longitude,latitude` (e.g., `2.3373,48.8493`).\n- **resource**: Always use `bdtopo-valhalla`.\n- **costType**: `time` (for isochrone) or `distance` (for isodistance).\n- **costValue**: Numeric value for the cost (e.g., 600 for 10 minutes if timeUnit is seconds).\n\n### RECOMMENDED PARAMETERS\n- **profile**: `car`, `pedestrian`.\n- **direction**: `departure` (from point) or `arrival` (to point).\n- **timeUnit**: `minute`, `second`, or `hour`.\n- **distanceUnit**: `meter` or `kilometer`.\n\n### RESPONSE STRUCTURE\n### RESPONSE STRUCTURE\nThe API returns a JSON object containing a GeoJSON 'Polygon' geometry. Use this TypeScript interface:\n\n```typescript\ninterface IGNIsochroneResponse {\n    point: string;              // \"lon,lat\"\n    resource: string;           // e.g., \"bdtopo-valhalla\"\n    resourceVersion: string;    // e.g., \"2026-03-13\"\n    costType: \"time\" | \"distance\";\n    costValue: number;\n    timeUnit?: string;\n    distanceUnit?: string;\n    profile: string;\n    direction: string;\n    geometry: {\n        type: \"Polygon\";\n        coordinates: Array<Array<[number, number]>>; // Array of [Lon, Lat] pairs\n    };\n    constraints: any[];\n}\n```\n\n*IMPORTANT*: When processing the `geometry.coordinates`, remember that the first array level represents the polygon, and the second level is the list of points. Each point is `[longitude, latitude]`."
   },
   {
     "name": "APICarto",
@@ -65,7 +95,7 @@
     "id": "apicarto",
     "waitMs": "100",
     "baseUrl": "https://apicarto.ign.fr/api",
-    "description": "\nL'API Carto est une API OpenData IGN.\n\n## 🛠 Les modules disponibles\n\n| Module | Description | Lien |\n| :--- | :--- | :--- |\n| **Cadastre** | Accès aux données cadastrales (commune, division, parcelle, etc.). | [Documentation API](./cadastre) |\n| **Limites Administratives** | Récupération des données administratives (commune, département, région). | [Documentation API](./limites-administratives) |\n| **Codes Postaux** | Récupération des communes en fonction d'un code postal. | [Documentation API](./codes-postaux) |\n| **Urbanisme (GpU)** | Accès aux données du Géoportail de l'Urbanisme (PLU, POS, CC, SUP). | [Documentation API](./gpu) |\n| **RPG** | Accès aux données du Registre Parcellaire Graphique (cultures). | [Documentation API](./rpg) |\n| **WFS-Geoportail** | Accès générique à n'importe quel flux WFS du Géoportail. | [Documentation API](./wfs-geoportail) |\n| **Nature** | Accès aux flux s'appuyant sur des données du MNHN. | [Documentation API](./nature) |\n| **AOC** | Accès aux données des Appellations d'Origine Contrôlée. | [Documentation API](./aoc) |\n        ",
+    "description": "\nThe Carto API is an IGN OpenData API.\n\n### Available modules:\n\n| Module | Description | Link |\n| :--- | :--- | :--- |\n| **Cadastre** | Access to cadastral data (municipality, division, plot/parcel, etc.). | [API Documentation](./cadastre) |\n| **Administrative Boundaries** | Retrieval of administrative data (municipality, department, region). | [API Documentation](./limites-administratives) |\n| **Postcodes** | Retrieval of municipalities based on a postcode. | [API Documentation](./codes-postaux) |\n| **Urban Planning (GpU)** | Access to Urban Planning Geoportail data (PLU, POS, CC, SUP). | [API Documentation](./gpu) |\n| **RPG** | Access to Graphical Parcel Register data (crops/agriculture). | [API Documentation](./rpg) |\n| **WFS-Geoportail** | Generic access to any Geoportail WFS feed. | [API Documentation](./wfs-geoportail) |\n| **Nature** | Access to feeds based on MNHN (National Museum of Natural History) data. | [API Documentation](./nature) |\n| **AOC** | Access to Controlled Appellation of Origin (AOC) data. | [API Documentation](./aoc) |\n        ",
     "prompt": "For France and specific government data, use the APICarto API (https://apicarto.ign.fr/api) with the appropriate module (cadastre, limites-administratives, codes-postaux, gpu, rpg, wfs-geoportail, nature, aoc). Each module API is available at https://apicarto.ign.fr/api/{module} and documented at https://apicarto.ign.fr/api/doc/{module}."
   },
   {
@@ -87,23 +117,30 @@
     "prompt": "Use Open Meteo Elevation API (available at `https://api.open-meteo.com/v1/elevation`) when the analysis requires elevation on many objets. Example: show topology around a point."
   },
   {
-    "topic": "Reverse Geocoding",
-    "name": "French Reverse Geocoding",
-    "id": "french-reverse-geocoding",
-    "waitMs": "100",
+    "topic": "Environmental Risks",
+    "name": "Géorisques V1",
+    "id": "georisques-v1",
+    "waitMs": "200",
     "baseUrl": [
-      "https://data.geopf.fr/geocodage/reverse",
-      "https://api-adresse.data.gouv.fr/reverse"
+      "https://www.georisques.gouv.fr/api/v1"
     ],
-    "rewriteRules": [
-      [
-        "replace",
-        "https://api-adresse.data.gouv.fr/reverse",
-        "https://data.geopf.fr/geocodage/reverse"
-      ]
+    "rewriteRules": [],
+    "description": "Legacy French Géorisques V1 API. It provides established endpoints for risk assessment, including the unique consolidated \"risques/details\" summary.",
+    "prompt": "To use the Géorisques V1 API, append the specific module path to the base URL (`https://www.georisques.gouv.fr/api/v1`). \n\n**Pagination:** Response structures vary; data is often in a `data` property or at root. Params: page (starts at 1), page_size (max 100).\n**Rules:** Use snake_case for params (e.g., code_insee, page_size). Spatial queries use a `latlon` parameter which is a string of \"longitude, latitude\" (IT IS REVERSED, yes). Max rayon = 10000 (in meters).\n\n| Path | Endpoint | Parameters |\n| :--- | :--- | :--- | :--- |\n| /gaspar/risques | Full Risk Summary | code_insee, latlon, rayon, page, page_size |\n| /gaspar/catnat | Natural Disasters | code_insee, latlon, rayon, page, page_size |\n| /installations_classees | Industrial Sites | departement, region, page, page_size |\n| /installations_nucleaires | Nuclear Sites | code_insee, latitude, longitude |\n| /ssp | Polluted Soils (SSP) | code_insee, latlon, rayon, page, page_size |\n| /old | Obligations Légales de Débroussaillement | code_insee, latlon |\n| /mvt | Landslides | code_insee, latlon, rayon, page, region, departement, type (\"Effondrement / Affaissement\", \"Coulée\", \"Glissement\", \"Erosion de berges\", \"Chute de blocs / Eboulement\"), page, page_size |\n| /cavites | Underground Cavities | code_insee, latlon, rayon, region, departement, identifiant, type (Cave, Naturelle, Indéterminé, Ouvrage civil, Puits, Divers, Galerie, Carrière, Indice, Ouvrage militaire, Réseau galeries, Souterrain), page, page_size |\n| /gaspar/azi | Inundation - AZI Program | code_insee, latlon, rayon, page, page_size |\n| /radon | Radon Risk | code_insee, page, page_size |\n| /dicrim | Prevention Docs | code_insee, latlon, rayon, page, page_size |\n"
+  },
+  {
+    "topic": "Environmental Risks",
+    "name": "Géorisques V2",
+    "id": "georisques-v2",
+    "apiKey": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJub20iOiJQQVdMQUsiLCJwcmVub20iOiJSZW5hdWQgUGllcnJlIEJydW5vIiwiZW1haWwiOiJyZW5hdWQucGF3bGFrQGdtYWlsLmNvbSIsImV4cCI6MTgwNDg5NjAwMCwiaWF0IjoxNzczMzkxODg2fQ._FyQ44l5DPzptN9fW9YJCpTu3uclT4ZF0mlUCqrMsws",
+    "apiKeyHeader": "Authorization",
+    "waitMs": "200",
+    "baseUrl": [
+      "https://www.georisques.gouv.fr/api/v2"
     ],
-    "description": "Get an address from coordinates in France.",
-    "prompt": "To reverse geocode an address in France, use the `https://data.geopf.fr/geocodage/reverse` endpoint."
+    "rewriteRules": [],
+    "description": "Access to the comprehensive French Géorisques V2 database. This version offers granular access to specific risk themes:\n        - **Inundation**: AZI, TRI, and PAPI programs.\n        - **Ground & Soil**: Clay swelling (RGA), landslides (MVT), and cavities.\n        - **Technological & Industrial**: Classified installations (ICPE), nuclear sites, and polluted soils (SSP/BASOL).\n        - **Planning & Regulation**: Detailed PPR (Natural, Technological, Mining) and DICRIM documents.\n        - **Natural Hazards**: Seismic zoning and Radon potential.",
+    "prompt": "To use the Géorisques V2 API, append the specific module path to the base URL (`https://www.georisques.gouv.fr/api/v2`). \n\n**Pagination:** Data is in .content[]. Params: page (starts at 1), pageSize (max 100).\n**Rules:** Use camelCase for params (e.g., codeInsee, pageSize). Max rayon = 10000.\n\n| Path | Endpoint | Parameters | Schema |\n| :--- | :--- | :--- | :--- |\n| /gaspar/risques | Risk Dictionary | page, pageSize | RiskDict |\n| /installations_classees | Industrial Sites (ICPE) | codeInsee, lat, lon, rayon, page, pageSize, raisonSociale, siret, etatActivite, codeNaf, statutSeveso, bovins, porcs, volailles, carriere, eolienne, industrie, prioriteNationale, ied | ICPE |\n| /rga | Clay Swelling (RGA) | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | RGA |\n| /zonage_sismique | Seismic Zoning | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Seisme |\n| /radon | Radon Gas Potential | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Radon |\n| /mvt | Landslides History | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | MVT |\n| /cavites | Underground Cavities | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Cavite |\n| /ssp | Polluted Soils (SSP) | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | SSP |\n| /gaspar/pprn | Natural Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/pprt | Tech Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/pprm | Mining Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/azi | Flood Zone Atlas | codeInsee, page, pageSize | AZI |\n| /gaspar/tri | Flood Risk Territory | codeInsee, page, pageSize | TRI |\n\n### Response Schemas\n```typescript\ninterface Paginated<T> { totalElements: number; content: T[]; }\ninterface RiskDict { code_risque: string; libelle_risque: string; }\ninterface ICPE { codeAIOT: string; raisonSociale: string; etatActivite: string; latitude: number; longitude: number; statutSeveso: string; codeInsee: string; commune: string; siret: string; regime: string; }\ninterface RGA { codeInsee: string; commune: string; classe_exposition: \"Fort\"|\"Moyen\"|\"Faible\"|\"Nul\"; }\ninterface Seisme { codeInsee: string; zone: string; libelle: string; }\ninterface Radon { codeInsee: string; classe_potentiel: number; }\ninterface MVT { id_mvt: string; libelle_mvt: string; date_evenement: string; latitude: number; longitude: number; }\ninterface Cavite { id_cavite: string; libelle_cavite: string; type_cavite: string; latitude: number; longitude: number; }\ninterface SSP { id_ssp: string; nomEtablissement: string; typeFiche: \"CASIAS\"|\"SIS\"|\"SUP\"; codeInsee: string; latitude: number; longitude: number; }\ninterface PPR { idGaspar: string; libPpr: string; etatProcedure: string; zonageReglementaire: { listTypeReg: Array<{ code: string; libelle: string; nom: string }> }; }\n```\n"
   },
   {
     "topic": "Photovoltaic Data",
@@ -114,7 +151,7 @@
       "https://re.jrc.ec.europa.eu/api"
     ],
     "description": "PVGIS (Photovoltaic Geographical Information System), a service provided by the Joint Research Centre (JRC) of the European Commission.",
-    "prompt": "Use PVGIS to get photovoltaic data. Available endpoints are documented at https://re.jrc.ec.europa.eu/api/v5_2/"
+    "prompt": "Use PVGIS to get photovoltaic data. Available endpoints are documented at https://re.jrc.ec.europa.eu/api/v5_2/\nHere is the data structure returned by PVGIS for a typical request:\n```typescript\ninterface PVGISData {\n  inputs: {\n    location: {\n      latitude: number;\n      longitude: number;\n      elevation: number;\n    };\n    meteo_data: {\n      radiation_db: string;\n      meteo_db: string;\n      year_min: number;\n      year_max: number;\n      use_horizon: boolean;\n      horizon_db: string;\n    };\n    mounting_system: {\n      fixed: {\n        slope: { value: number; optimal: boolean };\n        azimuth: { value: number; optimal: boolean };\n        type: string;\n      };\n    };\n    pv_module: {\n      technology: string;\n      peak_power: number;\n      system_loss: number;\n    };\n    economic_data: {\n      system_cost: number | null;\n      interest: number | null;\n      lifetime: number | null;\n    };\n  };\n  outputs: {\n    monthly: {\n      fixed: Array<{\n        month: number;\n        E_d: number;    // Average daily energy production (kWh/d)\n        E_m: number;    // Average monthly energy production (kWh/mo)\n        \"H(i)_d\": number; // Average daily global irradiation (kWh/m2/d)\n        \"H(i)_m\": number; // Average monthly global irradiation (kWh/m2/mo)\n        SD_m: number;   // Standard deviation of monthly production\n      }>;\n    };\n    totals: {\n      fixed: {\n        E_d: number;\n        E_m: number;\n        E_y: number;    // Average annual energy production (kWh/y)\n        \"H(i)_d\": number;\n        \"H(i)_m\": number;\n        \"H(i)_y\": number;\n        SD_m: number;\n        SD_y: number;\n        l_aoi: number;   // Angle of incidence loss (%)\n        l_spec: string | number; // Spectral loss (%) - Note: sometimes returned as string\n        l_tg: number;    // Temp/Irradiance loss (%)\n        l_total: number; // Total system loss (%)\n      };\n    };\n  };\n  meta: Record<string, any>; // Documentation metadata\n}```\n        "
   },
   {
     "topic": "Administrative Boundaries",
