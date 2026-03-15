@@ -689,6 +689,7 @@ The Sirene API provides access to the French National Register of Businesses and
         name: "World Bank Data API",
         id: "world-bank-data",
         waitMs: 100,
+        headerPolicy: "stealth", // Hide the Referer header to avoid CORS issues with the World Bank API
         baseUrl: "https://api.worldbank.org/v2",
         description: "GDP, inflation, and development stats for 200+ countries.",
         prompt: "Use GET https://api.worldbank.org/v2/country/{iso2code}/indicator/{indicatorCode}?format=json."

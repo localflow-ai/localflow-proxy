@@ -247,6 +247,7 @@
     "name": "World Bank Data API",
     "id": "world-bank-data",
     "waitMs": 100,
+    "headerPolicy": "stealth",
     "baseUrl": "https://api.worldbank.org/v2",
     "description": "GDP, inflation, and development stats for 200+ countries.",
     "prompt": "Use GET https://api.worldbank.org/v2/country/{iso2code}/indicator/{indicatorCode}?format=json."
