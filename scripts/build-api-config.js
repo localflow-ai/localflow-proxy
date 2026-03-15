@@ -17,6 +17,7 @@ const configData = [
             ]
         ],
         force: true,
+        prepaid: true,
         description: `OpenStreetMap's OverPass API allows to access most data that can be put on a map worldwide. For example: roads, forests, buildings, rivers, lakes, infrastructures, ...`,
         prompt: `Use OpenStreetMap's OverPass API (*HIGHLY PREFERED*) and Turf.js (available in \`turf\`). Example: find closest rivers and calculate distance. When using Overpass, remember the BBOX order is (south, west, north, east).`
     },
@@ -38,6 +39,7 @@ const configData = [
             ]
         ],
         force: true,
+        prepaid: true,
         prompt: `Use OSRM to calculate distance and time by transportation. The base url is \`https://routing.openstreetmap.de\`.`,
         description: `OSRM is the Open Source engine for routing. It can be used to calculate itineraries or find the distance and time between two points by any transportation means.`
     },
@@ -260,6 +262,7 @@ The Carto API is an IGN OpenData API.
 
         ],
         force: true,
+        prepaid: true,
         description: "Open Meteo Elevation is a service to get the elevation worldwide.",
         prompt: `Use Open Meteo Elevation API (available at \`https://api.open-meteo.com/v1/elevation\`) when the analysis requires elevation on many objets. Example: show topology around a point.`
     },
