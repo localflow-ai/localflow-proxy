@@ -98,28 +98,28 @@ const asyncHandler = fn => (req, res, next) => {
 
 // 1 request/sec, max 50 in queue, block the rest
 const limiter = new Bottleneck({
-  maxConcurrent: 1,                // Only process 1 at a time
-  minTime: 1000,                   // Wait at least 1s between starts
-  highWater: 50,                   // Max queue size
-  strategy: Bottleneck.strategy.BLOCK // Refuse (503) if queue > 50
+    maxConcurrent: 1,                // Only process 1 at a time
+    minTime: 1000,                   // Wait at least 1s between starts
+    highWater: 50,                   // Max queue size
+    strategy: Bottleneck.strategy.BLOCK // Refuse (503) if queue > 50
 });
 
 const throttler = (req, res, next) => {
-  limiter.schedule(() => Promise.resolve())
-    .then(() => next())
-    .catch(() => {
-        res.status(503).json({ error: "Server busy. Please try again later." });
-    });
+    limiter.schedule(() => Promise.resolve())
+        .then(() => next())
+        .catch(() => {
+            res.status(503).json({ error: "Server busy. Please try again later." });
+        });
 };
 
 // Create a group of limiters
 const publicGroup = new Bottleneck.Group({
-  reservoir: 30,           // Initial "tokens" (max calls)
-  reservoirRefreshAmount: 30, 
-  reservoirRefreshInterval: 60 * 60 * 1000 * 24, // Reset every 24 hours
-  
-  // Strategy: fail immediately when the reservoir is empty
-  rejectOnDrop: true 
+    reservoir: 30,           // Initial "tokens" (max calls)
+    reservoirRefreshAmount: 30,
+    reservoirRefreshInterval: 60 * 60 * 1000 * 24, // Reset every 24 hours
+
+    // Strategy: fail immediately when the reservoir is empty
+    rejectOnDrop: true
 });
 
 // Optional: Log when an IP is blocked
@@ -149,11 +149,11 @@ router.post('/external-signup', express.json(), asyncHandler(async (req, res) =>
 
     try {
         const odoo = new OdooConnector();
-        
+
         await odoo.login({
             url: `https://odoo.localflow.fr`,
             db: tenant,
-            username: 'renaud.pawlak@localflow.fr', 
+            username: 'renaud.pawlak@localflow.fr',
             password: '***REMOVED***' // 'nur1A' + tenant + '*'
         });
 
@@ -181,10 +181,10 @@ router.use(async (req, res, next) => {
     const isProxyPath = req.path.includes('/common/api-proxy');
     const headerName = isProxyPath ? 'x-proxy-token' : 'authorization';
 
-    const auth = req.headers[headerName]; 
+    const auth = req.headers[headerName];
     if (!auth || !auth.startsWith('Bearer ')) {
-        return res.status(401).json({ 
-            error: `Missing or invalid token. Expected in header: ${headerName}` 
+        return res.status(401).json({
+            error: `Missing or invalid token. Expected in header: ${headerName}`
         });
     }
 
@@ -198,16 +198,16 @@ router.use(async (req, res, next) => {
     // --- Limiter for public connector ---
     if (session.type === 'public') {
         const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        
+
         try {
             // schedule() will check the reservoir for this specific IP limiter
             // If the IP has exceeded 100 calls, it will throw a Bottleneck Error
             await publicGroup.key(clientIp).schedule(() => Promise.resolve());
         } catch (err) {
             logger.warn('Rate limit triggered for IP %s', clientIp);
-            return res.status(429).json({ 
-                error: 'Too many requests', 
-                detail: 'Public session rate limit exceeded.' 
+            return res.status(429).json({
+                error: 'Too many requests',
+                detail: 'Public session rate limit exceeded.'
             });
         }
     }
@@ -274,24 +274,33 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
     logger.info('Proxying %s: %s -> %s', req.method, targetUrl, finalUrl);
 
     const forbiddenRequestHeaders = [
-        'host', 'referer', 'x-forwarded-for', 'x-real-ip', 'cookie', 
+        'host', 'referer', 'x-forwarded-for', 'x-real-ip', 'cookie',
         'connection', 'content-length'
     ];
 
+    if (dataSource.headerPolicy === 'stealth') {
+        forbiddenRequestHeaders.push(...[
+            'origin', 'x-forwarded-host', 'x-forwarded-server',
+            'x-forwarded-for', 'x-real-ip', 'user-agent',
+            'authorization', 'cookie', 'x-proxy-token'
+        ])
+    }
+
     let hasUserAgent = false;
-    Object.keys(req.headers).forEach(key => {
+    for (const key of Object.keys(req.headers)) {
         const lowerKey = key.toLowerCase();
-        if (!forbiddenRequestHeaders.includes(lowerKey) && 
-            !lowerKey.startsWith('sec-') && 
-            lowerKey !== 'x-proxy-token') {
+        if (!forbiddenRequestHeaders.includes(lowerKey) &&
+            !lowerKey.startsWith('sec-') &&
+            lowerKey !== 'x-proxy-token') 
+        {
+            if (lowerKey === 'user-agent') {
+                hasUserAgent = true;
+            }
             requestHeaders[key] = req.headers[key];
         }
-        if (lowerKey === 'user-agent') {
-            hasUserAgent = true;
-        }
-    });
+    }
 
-    if (!hasUserAgent) {
+    if (!hasUserAgent && !forbiddenRequestHeaders.includes('user-agent')) {
         requestHeaders['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
     }
 
@@ -299,7 +308,7 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         method: req.method,
         headers: requestHeaders,
         redirect: 'follow',
-        compress: true 
+        compress: true
     };
 
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.body && req.body.length > 0) {
@@ -316,12 +325,12 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         res.status(response.status);
 
         const forbiddenResponseHeaders = [
-            'access-control-allow-origin', 
+            'access-control-allow-origin',
             'access-control-allow-credentials',
             'access-control-allow-headers',
             'access-control-allow-methods',
-            'transfer-encoding', 
-            'connection', 
+            'transfer-encoding',
+            'connection',
             'www-authenticate',
             'content-encoding',
             'content-length'
@@ -499,13 +508,13 @@ async function pagerender(pageData) {
     let text = '';
 
     for (let item of items) {
-        let str = item.str; 
-        if (!str.replace(/\s+/g, '')) continue; 
+        let str = item.str;
+        if (!str.replace(/\s+/g, '')) continue;
 
         // --- DÉTECTION DU STYLE ---
         const style = textContent.styles[item.fontName];
         const fontName = style ? (style.fontFamily || "").toLowerCase() : "";
-        
+
         const isBold = fontName.includes('bold') || fontName.includes('black') || fontName.includes('heavy');
         const isItalic = fontName.includes('italic') || fontName.includes('oblique');
 
@@ -520,9 +529,9 @@ async function pagerender(pageData) {
         // --- GESTION DES LIGNES ---
         if (lastY !== -1 && Math.abs(currentY - lastY) > 3) {
             text += (Math.abs(currentY - lastY) > 12) ? '\n\n' : '\n';
-            lastXEnd = -1; 
-        } 
-        
+            lastXEnd = -1;
+        }
+
         // --- ESPACES ---
         if (lastXEnd !== -1 && (currentX - lastXEnd) > 1.0) {
             if (!text.endsWith(' ') && !styledStr.startsWith(' ')) {
@@ -554,7 +563,7 @@ async function pagerender(pageData) {
 
 router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
     const { url, searchString } = req.body;
-    
+
     if (!url) return res.status(400).json({ error: 'Missing PDF URL' });
 
     // 1. Fetch PDF
@@ -567,12 +576,12 @@ router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
     // 2. Extraction via the optimized pagerender (Heuristics)
     const options = {
         pagerender: async (pageData) => {
-            const text = await pagerender(pageData); 
+            const text = await pagerender(pageData);
             pagesContent.push({
                 text: text,
                 normalized: normalizeForFuzzy(text)
             });
-            return text; 
+            return text;
         }
     };
 
@@ -580,7 +589,7 @@ router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
 
     // 3. Multi-Criteria Search Logic
     let finalContent = "";
-    const searchTerms = searchString 
+    const searchTerms = searchString
         ? (Array.isArray(searchString) ? searchString : searchString.split(','))
             .map(term => normalizeForFuzzy(term.trim()))
             .filter(term => term.length > 0)
@@ -591,8 +600,8 @@ router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
         pagesContent.forEach((page, i) => {
             const hasMatch = searchTerms.some(term => page.normalized.includes(term));
             if (hasMatch) {
-                if (i > 0) matchedIndices.add(i - 1); 
-                matchedIndices.add(i);                
+                if (i > 0) matchedIndices.add(i - 1);
+                matchedIndices.add(i);
                 if (i < pagesContent.length - 1) matchedIndices.add(i + 1);
             }
         });
@@ -611,7 +620,7 @@ router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
     }
 
     // 4. Enhanced Response with Metadata
-    res.json({ 
+    res.json({
         success: true,
         metadata: {
             title: data.info?.Title || "Unknown",
@@ -629,7 +638,7 @@ router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
 
 router.get('/common/extract-pdf/status', (req, res) => {
     const counts = limiter.counts(); // Gets internal bottleneck stats
-    
+
     res.json({
         active: counts.running,      // Should be 0 or 1 based on our maxConcurrent
         queued: counts.queued,       // How many are currently waiting
