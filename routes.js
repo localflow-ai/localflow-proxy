@@ -370,6 +370,7 @@ router.get('/common/api-config', (req, res) => {
         description: ds.description,
         baseUrl: ds.baseUrl,
         force: ds.force,
+        prepaid: ds.prepaid,
         prompt: ds.prompt,
         apiKeyQueryParam: ds.apiKeyQueryParam,
         apiKeyHeader: ds.apiKeyHeader,
