@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const path = require('path');
 // Explicitly point to the .env in the project root
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+const { getLogger } = require('./logging');
+const logger = getLogger('encryption');
 
 const keyHex = process.env.MASTER_ENCRYPTION_KEY;
 if (!keyHex) {
@@ -19,6 +21,8 @@ function getOrgKey(orgId) {
 
 function encrypt(text, orgId) {
     const orgKey = getOrgKey(orgId);
+    logger.debug(`Encrypting data for OrgId: ${orgId} with derived key: ${orgKey.toString('hex').slice(0, 16)}...`);
+    logger.debug('Master Key (truncated): ' + MASTER_KEY.toString('hex').slice(0, 16) + '...');
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv(ALGORITHM, orgKey, iv);
     
@@ -34,6 +38,8 @@ function encrypt(text, orgId) {
 function decrypt(cipherText, orgId) {
     try {
         const orgKey = getOrgKey(orgId);
+        logger.debug(`Decrypting data for OrgId: ${orgId} with derived key: ${orgKey.toString('hex').slice(0, 16)}...`);
+        logger.debug('Master Key (truncated): ' + MASTER_KEY.toString('hex').slice(0, 16) + '...');
         const [ivHex, tagHex, encryptedHex] = cipherText.split(':');
         
         const decipher = crypto.createDecipheriv(
