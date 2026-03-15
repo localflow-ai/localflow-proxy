@@ -405,8 +405,9 @@ router.get('/common/access-stats', asyncHandler(async (req, res) => {
     const userId = scope === 'org' ? 'org_' + sessionInfo.orgId : sessionInfo?.userId || sessionInfo?.username || 'unknown';
     const resource = req.query.resource;
     const readOnly = req.query.read === 'true';
+    const weight = parseInt(req.query.weight) || 1;
 
-    const stats = trackAccess(userId, resource, readOnly);
+    const stats = trackAccess(userId, resource, readOnly, weight);
     res.json(stats);
 }));
 

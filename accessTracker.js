@@ -50,9 +50,10 @@ function refreshLimits() {
  * * @param {string} userId 
  * @param {string} [resourceType='default']
  * @param {boolean} [readOnly=false]
+ * @param {number} [weight=1] Weight of the access (default 1). Set to 0 for read-only check.
  * @returns {Object} { resource, total, last24h, last7d, last30d, limit }
  */
-function trackAccess(userId, resourceType = 'default', readOnly = false) {
+function trackAccess(userId, resourceType = 'default', readOnly = false, weight = 1) {
     const safeUserId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
     const filePath = path.join(DATA_DIR, `access_log_${safeUserId}.json`);
 
@@ -88,8 +89,10 @@ function trackAccess(userId, resourceType = 'default', readOnly = false) {
     }
 
     if (!readOnly) {
-        bucket.timestamps.push(now);
-        bucket.total = (bucket.total || 0) + 1;
+        for (let i = 0; i < weight; i++) {
+            bucket.timestamps.push(now);
+        }        
+        bucket.total = (bucket.total || 0) + weight;
 
         try {
             fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
