@@ -286,22 +286,20 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         ])
     }
 
-    let hasUserAgent = false;
     for (const key of Object.keys(req.headers)) {
         const lowerKey = key.toLowerCase();
         if (!forbiddenRequestHeaders.includes(lowerKey) &&
             !lowerKey.startsWith('sec-') &&
-            lowerKey !== 'x-proxy-token') 
-        {
-            if (lowerKey === 'user-agent') {
-                hasUserAgent = true;
-            }
+            lowerKey !== 'x-proxy-token') {
             requestHeaders[key] = req.headers[key];
         }
     }
+    const defaultUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
-    if (!hasUserAgent && !forbiddenRequestHeaders.includes('user-agent')) {
-        requestHeaders['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+    if (dataSource.headerPolicy === 'stealth') {
+        requestHeaders['User-Agent'] = defaultUA;
+    } else if (!requestHeaders['User-Agent'] && !requestHeaders['user-agent']) {
+        requestHeaders['User-Agent'] = defaultUA;
     }
 
     const fetchOptions = {
