@@ -287,7 +287,7 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         }
     });
 
-    requestHeaders['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36';
+    requestHeaders['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
     const fetchOptions = {
         method: req.method,
@@ -301,6 +301,11 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
     }
 
     try {
+        logger.debug('Fetch options, %s', JSON.stringify({
+            method: fetchOptions.method,
+            headers: fetchOptions.headers,
+            hasBody: !!fetchOptions.body
+        }));
         const response = await fetch(finalUrl, fetchOptions);
         res.status(response.status);
 
