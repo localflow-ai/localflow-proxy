@@ -83,6 +83,32 @@ const configData = [
 | /altimetrie/v1/elevation | Elevation (Z) | lon, lat, resource (ign_rge_alti_wld), delimiter, indent | ElevationRes |
 | /navigation/itineraire | Routing (Itinerary) | start, end, resource (bdtopo-osrm, bdtopo-valhalla), profile (car, pedestrian), optimization (fastest, shortest), getSteps, getGeometry | RoutingRes |
 
+Available WFS layers to be used in the TYPENAMES param include (*IMPORTANT*: do not try other types unless given to you by the user):
+* \`CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle\` : parcelles. Example for properties in returned features: {"gid":77759101,"numero":"0067","feuille":1,"section":"AW","code_dep":"14","nom_com":"Lisieux","code_com":"366","com_abs":"000","code_arr":"000","idu":"14366000AW0067","contenance":112,"code_insee":"14366"},
+* \`wfs_du:zone_urba\` : Plan Local d'Urbanisme (PLU). Example for properties in returned features: {"gid":3106227,"gpu_doc_id":"426a9c9d28a6850c0f9dacea82896315","gpu_status":"production","gpu_timestamp":"2025-10-03T06:26:39.185Z","partition":"DU_200069532_C","libelle":"UE","libelong":"pavillonnaire diffus","typezone":"U","destdomi":null,"nomfic":"200069532_reglement_20250327_C.pdf"},
+* \`wfs_sup:assiette_sup_s\` servitudes d'utilité publiques,
+* \`BDTOPO_V3:foret_publique\`, 
+* \`BDCARTO_V5:construction_surfacique\`, 
+* \`BDCARTO_V5:occupation_du_sol\`, 
+* \`BDCARTO_V5:rond_point\`, 
+* \`BDCARTO_V5:transport_par_cable\`, 
+* \`BDCARTO_V5:zone_d_activite_ou_d_interet\`, 
+* \`BDCARTO_V5:zone_d_habitation\`, 
+* \`LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape\`, 
+* \`PROTECTEDAREAS.APB:apb\` : arrêtés de protection de biotope,
+* \`patrinat_ramsar:pnm\` : zone humide d'importance internationale (Ramsar),
+* \`BDTOPO_V3:terrain_de_sport\`, 
+* \`BDTOPO_V3:zone_de_vegetation\`
+* \`MESURES_COMPENSATOIRES:emprises_commune\` (mesures compensatoires des atteintes a la biodiversite)
+* \`MESURES_COMPENSATOIRES:emprises_lineaires\` (mesures compensatoires des atteintes a la biodiversite)
+* \`MESURES_COMPENSATOIRES:emprises_polygones\` (mesures compensatoires des atteintes a la biodiversite)
+* \`MESURES_COMPENSATOIRES:emprises_ponctuelles\` (mesures compensatoires des atteintes a la biodiversite)
+
+IMPORTANT: 
+- Coordinate Order: Geocoding and WFS GeoJSON return [Longitude, Latitude]. 
+- WFS BBOX is [LatMin, LonMin, LatMax, LonMax]
+- Parameter naming: Use \`lon\` for geocoding/elevation and \`lon,lat\` strings for routing.
+
 ### Response Schemas
 \`\`\`typescript
 // Standard GeoJSON FeatureCollection used by Geocoding and WFS
@@ -109,27 +135,10 @@ interface RoutingRes {
 }
 \`\`\`
 
-Available WFS layers to be used in the TYPENAMES param include (*IMPORTANT*: do not try other types unless given to you by the user):
-* \`CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle\` : parcelles. Example for properties in returned features: {"gid":77759101,"numero":"0067","feuille":1,"section":"AW","code_dep":"14","nom_com":"Lisieux","code_com":"366","com_abs":"000","code_arr":"000","idu":"14366000AW0067","contenance":112,"code_insee":"14366"},
-* \`wfs_du:zone_urba\` : Plan Local d'Urbanisme (PLU). Example for properties in returned features: {"gid":3106227,"gpu_doc_id":"426a9c9d28a6850c0f9dacea82896315","gpu_status":"production","gpu_timestamp":"2025-10-03T06:26:39.185Z","partition":"DU_200069532_C","libelle":"UE","libelong":"pavillonnaire diffus","typezone":"U","destdomi":null,"nomfic":"200069532_reglement_20250327_C.pdf"},
-* \`wfs_sup:assiette_sup_s\` servitudes d'utilité publiques,
-* \`BDTOPO_V3:foret_publique\`, 
-* \`BDCARTO_V5:construction_surfacique\`, 
-* \`BDCARTO_V5:occupation_du_sol\`, 
-* \`BDCARTO_V5:rond_point\`, 
-* \`BDCARTO_V5:transport_par_cable\`, 
-* \`BDCARTO_V5:zone_d_activite_ou_d_interet\`, 
-* \`BDCARTO_V5:zone_d_habitation\`, 
-* \`LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape\`, 
-* \`PROTECTEDAREAS.APB:apb\` : arrêtés de protection de biotope,
-* \`patrinat_ramsar:pnm\` : zone humide d'importance internationale (Ramsar),
-* \`BDTOPO_V3:terrain_de_sport\`, 
-* \`BDTOPO_V3:zone_de_vegetation\`
+### Examples
 
-IMPORTANT: 
-- Coordinate Order: Geocoding and WFS GeoJSON return [Longitude, Latitude]. 
-- WFS BBOX is [LatMin, LonMin, LatMax, LonMax]
-- Parameter naming: Use \`lon\` for geocoding/elevation and \`lon,lat\` strings for routing.
+For WFS, call https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=wfs_sup:assiette_sup_s&BBOX=49.10,0.18,49.18,0.28&&OUTPUTFORMAT=application/json and replace the type and bounding box parameters.
+
 
 \`\`\`
 `
