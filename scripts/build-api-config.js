@@ -323,7 +323,7 @@ The Carto API is an IGN OpenData API.
         },*/
 
     // ========================================================================================================    
-{
+    {
         topic: "Environmental Risks",
         name: "Géorisques V1",
         id: "georisques-v1",
@@ -349,7 +349,7 @@ The Carto API is an IGN OpenData API.
 | /gaspar/azi | Inundation - AZI Program | code_insee, latlon, rayon, page, page_size |
 | /radon | Radon Risk | code_insee, page, page_size |
 | /dicrim | Prevention Docs | code_insee, latlon, rayon, page, page_size |
-`        
+`
     },
 
     // ========================================================================================================    
@@ -402,7 +402,7 @@ interface Cavite { id_cavite: string; libelle_cavite: string; type_cavite: strin
 interface SSP { id_ssp: string; nomEtablissement: string; typeFiche: "CASIAS"|"SIS"|"SUP"; codeInsee: string; latitude: number; longitude: number; }
 interface PPR { idGaspar: string; libPpr: string; etatProcedure: string; zonageReglementaire: { listTypeReg: Array<{ code: string; libelle: string; nom: string }> }; }
 \`\`\`
-`        
+`
     },
 
     /*    {
@@ -761,7 +761,40 @@ The Sirene API provides access to the French National Register of Businesses and
         baseUrl: "https://api.openweathermap.org/data/2.5",
         description: "Current weather and forecasts for any coordinate.",
         prompt: "Use GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}. Do not include the appid query parameter because the proxy will inject it automatically."
-    }
+    },
+
+    // ========================================================================================================
+    // LOCALFLOW APIs (private)    
+    // ========================================================================================================    
+    {
+        name: "DVF (Demandes de Valeurs Foncières)",
+        topic: "French Real Estate",
+        id: "dvf-api",
+        baseUrl: "https://gis.daquota.io/dvf",
+        rewriteRules: [
+            // The public URL api.daquota.io/dvf rewrites to your server's internal listener
+            ['replace', 'https://gis.daquota.io/dvf', 'http://195.154.104.134:8889/dvf']
+        ],
+        description: `This API provides access to official French real estate transaction data (DVF) from Etalab. It includes over 18 million records of property sales, including prices, dates, surface areas, and room counts, geolocated and indexed for high-speed spatial proximity searches.`,
+        prompt: `Use the DVF API \`https://gis.daquota.io/dvf\` to retrieve historical real estate sales data in France. 
+
+### SEARCH CRITERIA
+You must provide at least one of the following filters:
+- **Spatial**: \`lat\`, \`lon\`, and \`dist\` (distance in meters, max 2000).
+- **Administrative**: \`code_postal\` (5 digits) or \`code_commune\` (5 digits).
+- **Cadastral**: \`id_parcelle\` (14 digits).
+
+### OPTIONAL FILTERS
+- \`type_local\`: Filter by "Maison", "Appartement", "Local industriel", or "Dépendance".
+- \`nature_mutation\`: Filter by "Vente", "Echange", or "Adjudication".
+
+### EXAMPLE RESULT
+\`\`\`json
+{"source" : "Etalab / Demande de Valeurs Foncières Géolocalisées", "type" : "FeatureCollection", "features" : [{"type" : "Feature", "geometry" : {"type":"Point","coordinates":[5.1102,46.401982]}, "properties" : {"id_mutation":"2022-12446","date_mutation":"2022-10-04","numero_disposition":"000001","nature_mutation":"Vente","valeur_fonciere":190000,"adresse_numero":"15","adresse_nom_voie":"PL DU MARCHE","adresse_code_voie":"0135","code_postal":"01560","code_commune":"01367","nom_commune":"Saint-Julien-sur-Reyssouze","code_departement":"01","id_parcelle":"013670000A1059","nombre_lots":0,"code_type_local":"1","type_local":"Maison","surface_reelle_bati":62,"nombre_pieces_principales":3,"code_nature_culture":"S","nature_culture":"sols","surface_terrain":421,"longitude":5.1102,"latitude":46.401982,"geom":{"type":"Point","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"coordinates":[5.1102,46.401982]}}}...
+\`\`\`
+
+*IMPORTANT*: Use the spatial search (\`lat/lon\`) for proximity analysis. Use the \`id_parcelle\` search for deep-dives into specific building history.`
+    },
 
 ];
 

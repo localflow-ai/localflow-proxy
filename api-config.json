@@ -300,5 +300,20 @@
     "baseUrl": "https://api.openweathermap.org/data/2.5",
     "description": "Current weather and forecasts for any coordinate.",
     "prompt": "Use GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}. Do not include the appid query parameter because the proxy will inject it automatically."
+  },
+  {
+    "name": "DVF (Demandes de Valeurs Foncières)",
+    "topic": "French Real Estate",
+    "id": "dvf-api",
+    "baseUrl": "https://gis.daquota.io/dvf",
+    "rewriteRules": [
+      [
+        "replace",
+        "https://gis.daquota.io/dvf",
+        "http://195.154.104.134:8889/dvf"
+      ]
+    ],
+    "description": "This API provides access to official French real estate transaction data (DVF) from Etalab. It includes over 18 million records of property sales, including prices, dates, surface areas, and room counts, geolocated and indexed for high-speed spatial proximity searches.",
+    "prompt": "Use the DVF API `https://gis.daquota.io/dvf` to retrieve historical real estate sales data in France. \n\n### SEARCH CRITERIA\nYou must provide at least one of the following filters:\n- **Spatial**: `lat`, `lon`, and `dist` (distance in meters, max 2000).\n- **Administrative**: `code_postal` (5 digits) or `code_commune` (5 digits).\n- **Cadastral**: `id_parcelle` (14 digits).\n\n### OPTIONAL FILTERS\n- `type_local`: Filter by \"Maison\", \"Appartement\", \"Local industriel\", or \"Dépendance\".\n- `nature_mutation`: Filter by \"Vente\", \"Echange\", or \"Adjudication\".\n\n### EXAMPLE RESULT\n```json\n{\"source\" : \"Etalab / Demande de Valeurs Foncières Géolocalisées\", \"type\" : \"FeatureCollection\", \"features\" : [{\"type\" : \"Feature\", \"geometry\" : {\"type\":\"Point\",\"coordinates\":[5.1102,46.401982]}, \"properties\" : {\"id_mutation\":\"2022-12446\",\"date_mutation\":\"2022-10-04\",\"numero_disposition\":\"000001\",\"nature_mutation\":\"Vente\",\"valeur_fonciere\":190000,\"adresse_numero\":\"15\",\"adresse_nom_voie\":\"PL DU MARCHE\",\"adresse_code_voie\":\"0135\",\"code_postal\":\"01560\",\"code_commune\":\"01367\",\"nom_commune\":\"Saint-Julien-sur-Reyssouze\",\"code_departement\":\"01\",\"id_parcelle\":\"013670000A1059\",\"nombre_lots\":0,\"code_type_local\":\"1\",\"type_local\":\"Maison\",\"surface_reelle_bati\":62,\"nombre_pieces_principales\":3,\"code_nature_culture\":\"S\",\"nature_culture\":\"sols\",\"surface_terrain\":421,\"longitude\":5.1102,\"latitude\":46.401982,\"geom\":{\"type\":\"Point\",\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"EPSG:4326\"}},\"coordinates\":[5.1102,46.401982]}}}...\n```\n\n*IMPORTANT*: Use the spatial search (`lat/lon`) for proximity analysis. Use the `id_parcelle` search for deep-dives into specific building history."
   }
 ]
