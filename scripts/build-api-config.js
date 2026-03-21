@@ -479,6 +479,70 @@ interface PPR { idGaspar: string; libPpr: string; etatProcedure: string; zonageR
 
     // ========================================================================================================    
     {
+        topic: "Environmental Data",
+        name: "OpenWeatherMap",
+        id: "openweathermap",
+        rewriteRules: [
+            ['decrypt-query-param', 'appid'],
+            ['inject-query-param', 'appid', 'xxx']
+        ],
+        apiKeyQueryParam: "appid",
+        waitMs: 500,
+        baseUrl: "https://api.openweathermap.org/data/2.5",
+        description: "Current weather and forecasts for any coordinate.",
+        prompt: "Use GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}. Do not include the appid query parameter because the proxy will inject it automatically."
+    },
+
+    // ========================================================================================================    
+    {
+        topic: "Urbanisme et Environnement",
+        name: "Cerema Cartofriches (Preprod)",
+        id: "cerema-cartofriches-preprod",
+        waitMs: 500,
+        baseUrl: "https://apidf-preprod.cerema.fr",
+        description: "Inventaire national des friches (industrielles, commerciales, habitat) via le portail Datafoncier du Cerema.",
+        prompt: `Use GET https://apidf-preprod.cerema.fr/cartofriches/friches/?code_insee={code_insee}&coddep={coddep}&in_bbox={min_lon},{min_lat},{max_lon},{max_lat}. 
+Important: You must provide all geographical filters (code_insee, coddep, an in_bbox).
+Other available query parameters are:
+- ordering (string): Which field to use when ordering the results.
+- page (integer): A page number within the paginated result set.
+- page_size (integer): Number of results to return per page.
+- surface_max (number): Surface maximale de l'unité foncière
+- surface_min (number): Surface minimale de l'unité foncière
+- urba_zone_type (string): Type de zone d'urbanisme
+
+### Response example:
+\`\`\`json
+{
+  "count": 13,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "site_id": "14258_26849",
+      "site_nom": "Ancien Leader Price",
+      "site_type": "friche commerciale",
+      "site_adresse": null,
+      "site_statut": "friche avec projet",
+      "comm_nom": "Falaise",
+      "comm_insee": "14258",
+      "dep": "14",
+      "proprio_personne": "personne morale",
+      "unite_fonciere_surface": 10592.338839733191,
+      "unite_fonciere_refcad": "['14258000BN0415', '14258000BN0414']",
+      "source_nom": "EPF Normandie",
+      "nature": "observatoire local",
+      "urba_zone_type": "U"
+    },
+    ...
+  ]
+}
+\`\`\`
+`
+    },
+
+    // ========================================================================================================    
+    {
         topic: "Photovoltaic Data",
         name: "PVGIS (Photovoltaic Geographical Information System)",
         id: "pvgis",
@@ -762,7 +826,7 @@ The Sirene API provides access to the French National Register of Businesses and
         description: "Current weather and forecasts for any coordinate.",
         prompt: "Use GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}. Do not include the appid query parameter because the proxy will inject it automatically."
     },
-
+    
     // ========================================================================================================
     // LOCALFLOW APIs (private)    
     // ========================================================================================================    
