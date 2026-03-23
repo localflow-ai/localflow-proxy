@@ -86,7 +86,6 @@ const configData = [
 Available WFS layers to be used in the TYPENAMES param include (*IMPORTANT*: do not try other types unless given to you by the user):
 * \`CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle\` : parcelles. Example for properties in returned features: {"gid":77759101,"numero":"0067","feuille":1,"section":"AW","code_dep":"14","nom_com":"Lisieux","code_com":"366","com_abs":"000","code_arr":"000","idu":"14366000AW0067","contenance":112,"code_insee":"14366"},
 * \`wfs_du:zone_urba\` : Plan Local d'Urbanisme (PLU). Example for properties in returned features: {"gid":3106227,"gpu_doc_id":"426a9c9d28a6850c0f9dacea82896315","gpu_status":"production","gpu_timestamp":"2025-10-03T06:26:39.185Z","partition":"DU_200069532_C","libelle":"UE","libelong":"pavillonnaire diffus","typezone":"U","destdomi":null,"nomfic":"200069532_reglement_20250327_C.pdf"},
-* \`wfs_sup:assiette_sup_s\` servitudes d'utilité publiques,
 * \`BDTOPO_V3:foret_publique\`, 
 * \`BDCARTO_V5:construction_surfacique\`, 
 * \`BDCARTO_V5:occupation_du_sol\`, 
@@ -103,6 +102,11 @@ Available WFS layers to be used in the TYPENAMES param include (*IMPORTANT*: do 
 * \`MESURES_COMPENSATOIRES:emprises_lineaires\` (mesures compensatoires des atteintes a la biodiversite)
 * \`MESURES_COMPENSATOIRES:emprises_polygones\` (mesures compensatoires des atteintes a la biodiversite)
 * \`MESURES_COMPENSATOIRES:emprises_ponctuelles\` (mesures compensatoires des atteintes a la biodiversite)
+* \`wfs_sup:assiette_sup_s\` servitudes d'utilité publiques (surfaces),
+* \`wfs_sup:assiette_sup_p\` servitudes d'utilité publiques (ponctuelles),
+* \`wfs_sup:assiette_sup_l\` servitudes d'utilité publiques (linéaires),
+* \`patrinat_pnr:pnr\` parc naturel régional (PNR)\`,
+* \`essai_gpkg_raster_v2_gpkg_03-02-2025_wfs:composantes_de_la_trame_verte_nsm\` (trame verte et bleue, ZNIEFF 1 et ZNIEFF 2)
 
 IMPORTANT: 
 - Coordinate Order: Geocoding and WFS GeoJSON return [Longitude, Latitude]. 
@@ -826,7 +830,88 @@ The Sirene API provides access to the French National Register of Businesses and
         description: "Current weather and forecasts for any coordinate.",
         prompt: "Use GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}. Do not include the appid query parameter because the proxy will inject it automatically."
     },
-    
+
+    // ========================================================================================================    
+{
+        name: "Moteur Immo",
+        topic: "French Real Estate",
+        id: "moteur-immo",
+        waitMs: 200,
+        apiKeyQueryParamGetOnly: "apiKey",
+        apiKeyBodyParam: "apiKey",
+        baseUrl: "https://moteurimmo.fr/api",
+        description: `Moteur Immo is a massive aggregator for the French real estate market, indexing listings from over 70 platforms (Leboncoin, SeLoger, PAP, Bien'ici, etc.) every 10 minutes. 
+        Key features include:
+        - **Advanced De-duplication**: Groups identical listings across multiple portals into a single "main" ad.
+        - **Data Enrichment**: Automatically extracts DPE/GES ratings, charges, and calculates estimated profitability and price-per-sqm gaps versus local market medians.
+        - **Historical Access**: Retains deleted/expired ads for 1 year and tracks price changes/republications.`,
+        prompt: `Use \`https://moteurimmo.fr/api\` (Moteur Immo API) to search for active or historical real estate listings in France. 
+
+### CORE ENDPOINTS
+- **POST /ads**: Search for listings (active). Highly recommended for complex filtering.
+- **GET /ad/{id}**: Retrieve a specific ad via uniqueId, URL, or origin/adId pair.
+- **POST /deletedAds**: Search for ads removed from the market (minimalist format, free of charge).
+- **POST /publishers**: Search for real estate professionals or individuals.
+
+### SEARCH PARAMETERS (POST /ads) 
+- **publisherTypes**: \`professional\`, \`individual\`. Default is \`['professional', 'individual']\`.
+- **locations**: List of objects: \`{ "inseeCode": "..." }\`, \`{ "postalCode": "..." }\`, or \`{ "departmentCode": 75 }\`.
+- **radius**: Search radius in kilometers (possible values from 1 to 100).
+- **box**: Bounding box defined by \`[[longitude, latitude], [longitude, latitude]]\` (top-left and bottom-right coordinates).
+- **types**: Array containing \`"sale"\` or \`"rental"\`. Default is \`['sale', 'rental']\`.
+- **categories**: \`house, flat, office, premises, shop, block (immeuble), land, parking/garage/box, misc\`. Default is \`['house', 'flat', 'office', 'premises', 'shop', 'block', 'land', 'parking/garage/box', 'misc']\`.
+- **priceMin / priceMax**: Price in Euros.
+- **pricePerSquareMeterMin / pricePerSquareMeterMax**: Price per m² in Euros.
+- **rentMin / rentMax**: Monthly rent in Euros (for rentals).
+- **propertyChargesMin / propertyChargesMax**: Monthly property charges in Euros (for rentals).
+- **propertyTaxMin / propertyTaxMax**: Annual property (foncière) tax in Euros.
+- **roomsMin / roomsMax**: Number of main rooms.
+- **bedroomsMin / bedroomsMax**: Number of bedrooms.
+- **surfaceMin / surfaceMax**: Living area in m².
+- **landSurfaceMin / landSurfaceMax**: Land area in m².
+- **constructionYearMin / constructionYearMax**: Year of construction.
+- **floorMin / floorMax**: Floor number (for apartments).
+- **buildingFloorsMin / buildingFloorsMax**: Total number of floors in the building (for apartments).
+- **energyGradeMin / energyGradeMax**: DPE energy rating from in \`['A', 'B', 'C', 'D', 'E', 'F', 'G', 'V']\`.
+- **energyValueMin / energyValueMax**: DPE energy consumption in kWh/m²/year between 1 and 1000.
+- **gasGradeMin / gasGradeMax**: DPE greenhouse gas rating in \`['A', 'B', 'C', 'D', 'E', 'F', 'G', 'V']\`.
+- **gasValueMin / gasValueMax**: DPE greenhouse gas emissions in kgCO2/m²/year between 1 and 1000.
+- **options**: Boolean filters like \`hasLift\`, \`hasGarden\`, \`isNew\`, \`hasWorksRequired\`, \`knownPosition\`, or \`denyProspecting\`.
+- **keywords**: Array of strings to search in title and description.
+- **keywordOperator**: \`and\` (default) or \`or\` to combine multiple keywords.
+- **sortBy**: \`creationDate-desc\` (default), \`price-asc\`, \`lastPriceChangeDate-desc\`, \`lastChangeDate-desc\`.
+
+### RESPONSE SCHEMA (Ad Object)
+\`\`\`typescript
+interface MoteurImmoAd {
+  uniqueId: string;
+  title: string;
+  description: string;
+  price: number;
+  surface: number;
+  rooms: number;
+  location: {
+    city: string;
+    postalCode: string;
+    inseeCode: string;
+    coordinates: [number, number]; // [Longitude, Latitude]
+    isRightLocation: boolean;      // True if the location was verified in text
+  };
+  priceStats: {
+    profitability: number;  // Estimated yield (e.g., 0.05 for 5%)
+    medianPrice: number;     // Local median price per m²
+    priceGap: number;        // Gap percentage vs median
+  };
+  energyGrade: "A" | "B" | "C" | "D" | "E" | "F" | "G";
+  url: string;               // Direct link to source
+  duplicates: Array<{ origin: string; url: string; price: number }>;
+  history?: Array<{ action: string; date: string; differences: any }>;
+}
+\`\`\`
+
+*IMPORTANT*: Pagination is restricted to the first 10,000 ads. To fetch older data, use \`creationDateBefore\` filters to create time intervals.`
+    },
+
     // ========================================================================================================
     // LOCALFLOW APIs (private)    
     // ========================================================================================================    

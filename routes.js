@@ -251,7 +251,7 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
     const requestHeaders = {};
 
     let apiKey = req.headers['x-proxy-api-key'];
-    if (dataSource.apiKeyQueryParam || dataSource.apiKeyHeader || dataSource.apiKeyRoutePlaceholder) {
+    if (dataSource.apiKeyQueryParam || dataSource.apiKeyQueryParamGetOnly || dataSource.apiKeyHeader || dataSource.apiKeyRoutePlaceholder || dataSource.apiKeyBodyParam) {
         if (!apiKey) {
             apiKey = dataSource.apiKey;
         } else {
@@ -265,6 +265,11 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
             if (dataSource.apiKeyQueryParam) {
                 const url = new URL(targetUrl);
                 url.searchParams.set(dataSource.apiKeyQueryParam, apiKey);
+                targetUrl = url.toString();
+            }
+            if (dataSource.apiKeyQueryParamGetOnly && req.method.toUpperCase() === 'GET') {
+                const url = new URL(targetUrl);
+                url.searchParams.set(dataSource.apiKeyQueryParamGetOnly, apiKey);
                 targetUrl = url.toString();
             }
         }
@@ -310,7 +315,21 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
     };
 
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.body && req.body.length > 0) {
-        fetchOptions.body = req.body;
+        let body = req.body;
+        
+        if (dataSource.apiKeyBodyParam && apiKey) {
+            try {
+                const jsonBody = body && body.length > 0 ? JSON.parse(body.toString()) : {};
+                jsonBody[dataSource.apiKeyBodyParam] = apiKey;
+                body = Buffer.from(JSON.stringify(jsonBody));
+            } catch (e) {
+                logger.warn('Proxy: Could not inject apiKeyBodyParam (body not JSON)');
+            }
+        }
+        
+        if (body && body.length > 0) {
+            fetchOptions.body = body;
+        }
     }
 
     try {
@@ -373,6 +392,8 @@ router.get('/common/api-config', (req, res) => {
         prepaid: ds.prepaid,
         prompt: ds.prompt,
         apiKeyQueryParam: ds.apiKeyQueryParam,
+        apiKeyQueryParamGetOnly: ds.apiKeyQueryParamGetOnly,
+        apiKeyBodyParam: ds.apiKeyBodyParam,
         apiKeyHeader: ds.apiKeyHeader,
         apiKeyRoutePlaceholder: ds.apiKeyRoutePlaceholder,
         apiKey: ds.apiKey ? '***' : undefined, // Mask API key in response
