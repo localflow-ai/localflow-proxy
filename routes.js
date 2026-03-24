@@ -4,12 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 
-router.use(cors({
-    origin: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token', 'X-Proxy-API-Key'],
-    credentials: true
-}));
-
 const { createSession, getSession } = require('./sessionManager.js');
 const { SalesforceConnector } = require('./connectors/salesforce.js');
 const { OdooConnector } = require('./connectors/odoo.js');
