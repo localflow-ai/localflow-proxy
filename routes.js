@@ -301,6 +301,9 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         requestHeaders['User-Agent'] = defaultUA;
     }
 
+    const targetHostname = new URL(finalUrl).hostname;
+    requestHeaders['Host'] = targetHostname;
+
     const fetchOptions = {
         method: req.method,
         headers: requestHeaders,
