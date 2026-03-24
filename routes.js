@@ -287,11 +287,18 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
 
     for (const key of Object.keys(req.headers)) {
         const lowerKey = key.toLowerCase();
-        if (!forbiddenRequestHeaders.includes(lowerKey) &&
-            !lowerKey.startsWith('sec-') &&
-            lowerKey !== 'x-proxy-token') {
-            requestHeaders[key] = req.headers[key];
+
+        if (
+            forbiddenRequestHeaders.includes(lowerKey) ||
+            lowerKey.startsWith('sec-') ||
+            lowerKey === 'x-proxy-token' ||
+            lowerKey === 'x-proxy-api-key' ||
+            lowerKey.startsWith('x-forwarded-') // Very important!
+        ) {
+            continue;
         }
+
+        requestHeaders[lowerKey] = req.headers[key];
     }
     const defaultUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
@@ -301,8 +308,10 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         requestHeaders['User-Agent'] = defaultUA;
     }
 
-    const targetHostname = new URL(finalUrl).hostname;
-    requestHeaders['Host'] = targetHostname;
+    const targetUrlObj = new URL(finalUrl);
+    requestHeaders['host'] = targetUrlObj.host;
+
+    console.log("FINAL OUTBOUND HEADERS:", requestHeaders);
 
     const fetchOptions = {
         method: req.method,
@@ -313,7 +322,7 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
 
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.body && req.body.length > 0) {
         let body = req.body;
-        
+
         if (dataSource.apiKeyBodyParam && apiKey) {
             try {
                 const jsonBody = body && body.length > 0 ? JSON.parse(body.toString()) : {};
@@ -323,7 +332,7 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
                 logger.warn('Proxy: Could not inject apiKeyBodyParam (body not JSON)');
             }
         }
-        
+
         if (body && body.length > 0) {
             fetchOptions.body = body;
         }
