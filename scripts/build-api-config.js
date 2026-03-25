@@ -3,6 +3,31 @@
 const fs = require('fs');
 const path = require('path');
 
+/*
+ * API configuration file generator. This script generates a JSON file that defines how the proxy should interact with various third-party APIs.
+ * Each entry defines how to interact with a specific API, including:
+ * {
+ *   name: "API Name",
+ *   topic: "General Topic",
+ *   id: "unique-api-id",
+ *   baseUrl: "https://api.example.com" or ["https://api1.example.com", "https://api2.example.com"],
+ *   force: true, // If true, forces the use of this API even if not selected by the user
+ *   rewriteRules: [ // Optional URL rewrite rules for this API
+ *     ['replace', 'search-pattern', 'replacement-pattern']
+ *   ]
+ *   waitMs: 100, // Optional delay between requests to this API
+ *   apiKey: 'your-api-key', // API key value to inject
+ *   apiKeyRoutePlaceholder: '{apiKey}', // Placeholder in baseUrl for API key injection
+ *   apiKeyHeader: 'X-API-Key', // Optional header name for API key (if not using URL query param)
+ *   apiKeyQueryParam: 'apiKey', // Optional query parameter name for API key (for all request types)
+ *   apiKeyQueryParamGetOnly: 'apiKey', // Optional query parameter name for API key in GET requests
+ *   apiKeyBodyParam: 'apiKey', // Optional body parameter name for API key in POST/PUT requests
+ *   requiredReferer: 'https://example.com', // Optional referer header value required by the API
+ *   requiredOrigin: 'https://example.com', // Optional origin header value required by the API
+ *   requiredUserAgent: 'Custom User Agent', // Optional user agent string required by the API
+ * }
+ */
+
 const configData = [
     {
         name: "OverPass",
@@ -766,7 +791,6 @@ The Sirene API provides access to the French National Register of Businesses and
         name: "World Bank Data API",
         id: "world-bank-data",
         waitMs: 100,
-        headerPolicy: "stealth", // Hide the Referer header to avoid CORS issues with the World Bank API
         baseUrl: "https://api.worldbank.org/v2",
         description: "GDP, inflation, and development stats for 200+ countries.",
         prompt: "Use GET https://api.worldbank.org/v2/country/{iso2code}/indicator/{indicatorCode}?format=json."
@@ -800,6 +824,8 @@ The Sirene API provides access to the French National Register of Businesses and
         name: "Nominatim (OSM Geocoding)",
         id: "osm-nominatim",
         authType: "none",
+        requiredReferer: "https://apps.daquota.io",
+        requiredUserAgent: "daquota.io",
         waitMs: 1000,
         baseUrl: "https://nominatim.openstreetmap.org",
         description: "Official OpenStreetMap geocoder. Converts addresses to coordinates.",
