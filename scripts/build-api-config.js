@@ -748,8 +748,29 @@ The Sirene API provides access to the French National Register of Businesses and
         id: "recherche-entreprises",
         waitMs: 100,
         baseUrl: "https://recherche-entreprises.api.gouv.fr",
-        description: "Official French aggregator (Sirene + RNE + Labels). Best for search bars and company leader names.",
-        prompt: "Use GET https://recherche-entreprises.api.gouv.fr/search?q={query}."
+        description: "Official French aggregator (Sirene + RNE + Labels). Best for search companies and company leader names.",
+        prompt: `Use \`https://recherche-entreprises.api.gouv.fr/search?q={query}\` for a textual search without location constraints.
+        
+Use \`https://recherche-entreprises.api.gouv.fr/near_point?lat={lat}&long={long}&radius={radius}\` for a location-based search where radius is in kilometers (default 5, max 50).
+
+Additional (optional) parameters for both endpoints are:
+- \`activite_principale\`: Code NAF exact (ex: 41.20Z)
+- \`section_activite_principale\`: Lettre de section (ex: F pour Construction, C pour Industrie)
+- \`tranche_effectif_salarie\`: Tranche INSEE (ex: 21 pour 50 à 99 salariés)
+- \`categorie_entreprise\`: PME, ETI, GE
+- \`code_postal\`: Filter by one or more postal codes.
+- \`est_entrepreneur_individuel\`: true ou false
+- \`est_organisme_formation\`: Entreprise de formation
+- \`est_rge\`: Find companies with "Reconnu Garant de l'Environnement" label.
+- \`est_ess\`: Filter for Social and Solidarity Economy (ESS) companies.
+- \`est_bio\`: Certifié Agriculture Biologique
+- \`nom_personne\`: Search for companies managed by a specific person.
+- \`ca_min / ca_max\`: Filter by turnover (CA) in Euros.
+- \`etat_administratif\`: A (Actif) ou C (Cessé)
+- \`include\`: 'dirigeants', 'finances', 'complements' to include additional data in the response (multiple occurences allowed).
+- \`page\`: Page number for pagination (starts at 1).
+- \`per_page\`: Number of results per page (default 20, max 100).
+`
     },
 
     // ========================================================================================================    
