@@ -146,27 +146,6 @@
     "prompt": "To use the Géorisques V2 API, append the specific module path to the base URL (`https://www.georisques.gouv.fr/api/v2`). \n\n**Pagination:** Data is in .content[]. Params: page (starts at 1), pageSize (max 100).\n**Rules:** Use camelCase for params (e.g., codeInsee, pageSize). Max rayon = 10000.\n\n| Path | Endpoint | Parameters | Schema |\n| :--- | :--- | :--- | :--- |\n| /gaspar/risques | Risk Dictionary | page, pageSize | RiskDict |\n| /installations_classees | Industrial Sites (ICPE) | codeInsee, lat, lon, rayon, page, pageSize, raisonSociale, siret, etatActivite, codeNaf, statutSeveso, bovins, porcs, volailles, carriere, eolienne, industrie, prioriteNationale, ied | ICPE |\n| /rga | Clay Swelling (RGA) | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | RGA |\n| /zonage_sismique | Seismic Zoning | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Seisme |\n| /radon | Radon Gas Potential | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Radon |\n| /mvt | Landslides History | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | MVT |\n| /cavites | Underground Cavities | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Cavite |\n| /ssp | Polluted Soils (SSP) | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | SSP |\n| /gaspar/pprn | Natural Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/pprt | Tech Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/pprm | Mining Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/azi | Flood Zone Atlas | codeInsee, page, pageSize | AZI |\n| /gaspar/tri | Flood Risk Territory | codeInsee, page, pageSize | TRI |\n\n### Response Schemas\n```typescript\ninterface Paginated<T> { totalElements: number; content: T[]; }\ninterface RiskDict { code_risque: string; libelle_risque: string; }\ninterface ICPE { codeAIOT: string; raisonSociale: string; etatActivite: string; latitude: number; longitude: number; statutSeveso: string; codeInsee: string; commune: string; siret: string; regime: string; }\ninterface RGA { codeInsee: string; commune: string; classe_exposition: \"Fort\"|\"Moyen\"|\"Faible\"|\"Nul\"; }\ninterface Seisme { codeInsee: string; zone: string; libelle: string; }\ninterface Radon { codeInsee: string; classe_potentiel: number; }\ninterface MVT { id_mvt: string; libelle_mvt: string; date_evenement: string; latitude: number; longitude: number; }\ninterface Cavite { id_cavite: string; libelle_cavite: string; type_cavite: string; latitude: number; longitude: number; }\ninterface SSP { id_ssp: string; nomEtablissement: string; typeFiche: \"CASIAS\"|\"SIS\"|\"SUP\"; codeInsee: string; latitude: number; longitude: number; }\ninterface PPR { idGaspar: string; libPpr: string; etatProcedure: string; zonageReglementaire: { listTypeReg: Array<{ code: string; libelle: string; nom: string }> }; }\n```\n"
   },
   {
-    "topic": "Environmental Data",
-    "name": "OpenWeatherMap",
-    "id": "openweathermap",
-    "rewriteRules": [
-      [
-        "decrypt-query-param",
-        "appid"
-      ],
-      [
-        "inject-query-param",
-        "appid",
-        "xxx"
-      ]
-    ],
-    "apiKeyQueryParam": "appid",
-    "waitMs": 500,
-    "baseUrl": "https://api.openweathermap.org/data/2.5",
-    "description": "Current weather and forecasts for any coordinate.",
-    "prompt": "Use GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}. Do not include the appid query parameter because the proxy will inject it automatically."
-  },
-  {
     "topic": "Urbanisme et Environnement",
     "name": "Cerema Cartofriches (Preprod)",
     "id": "cerema-cartofriches-preprod",
@@ -197,23 +176,25 @@
   },
   {
     "topic": "Demographics & Local Stats",
-    "name": "INSEE Melodi (Local Data)",
+    "name": "INSEE Melodi",
     "id": "insee-melodi",
     "waitMs": "500",
-    "baseUrl": "https://api.insee.fr/donnees-locales/v1",
-    "apiKeyHeader": "X-INSEE-Api-Key-ID",
-    "description": "Socio-economic data at the local level: population density, age brackets, housing types, and employment stats by city or area.",
-    "prompt": "Use the INSEE Melodi API to retrieve demographic statistics for specific French territories."
+    "baseUrl": "https://api.insee.fr/melodi",
+    "apiKey": "Bearer 1845eea1-69f0-4d28-85ee-a169f03d28a0",
+    "apiKeyHeader": "Authorization",
+    "description": "Socio-economic data at the local level: population density, age brackets, housing types, business and employment stats by city or area.",
+    "prompt": "Use the INSEE Melodi API at `https://api.insee.fr/melodi` to retrieve demographic statistics for specific French territories.\n\n### Examples:\n\n- **Avialable datasets**: `https://api.insee.fr/melodi/V2/catalog/all`\n- **Population data**: `https://api.insee.fr/melodi/data/DS_POPULATIONS_REFERENCE?GEO=DEP-44`\n- **Business creations**: `https://api.insee.fr/melodi/data/DS_SIDE_CREA_ENT_SERIES?TIME_PERIOD=2023`\n\n### Vibe coding process:\nIf your query does not work, provide the user with a list of available datasets and their codes from `/melodi/V2/catalog/all` and ask them to choose the correct one for their query.\n"
   },
   {
     "topic": "Macro-economic Indicators",
     "name": "INSEE BDM (Economic Series)",
     "id": "insee-bdm",
     "waitMs": "500",
-    "baseUrl": "https://api.insee.fr/series/v1",
-    "apiKeyHeader": "X-INSEE-Api-Key-ID",
+    "baseUrl": "https://api.insee.fr/series/BDM",
+    "apiKey": "Bearer 1845eea1-69f0-4d28-85ee-a169f03d28a0",
+    "apiKeyHeader": "Authorization",
     "description": "Time-series data for the French economy. Includes the Consumer Price Index (Inflation), GDP growth, and construction cost indices.",
-    "prompt": "Query economic indices and time series data via the INSEE BDM endpoints."
+    "prompt": "Use `https://api.insee.fr/series/BDM` to query economic indices and time series data via the INSEE BDM endpoints.\n        \n### Example Queries:\n**Series Catalog**: `https://api.insee.fr/series/BDM/V1/dataflow/all` (to find available series and their codes).\n**Price Index (Inflation)**: `https://api.insee.fr/series/BDM/V1/data/SERIES_BDM/001763119`\n\n### Result structure:\nDo not pass any accept headers. The API always returns SDMX-ML formatted XML.\n\n### Vibe coding process:\nIf your query does not work, provide the user with a list of available series and their codes from `/series/BDM/V1/dataflow/all` and ask them to choose the correct one for their query.\n        "
   },
   {
     "topic": "Non-Profit Data",
@@ -323,7 +304,7 @@
       [
         "inject-query-param",
         "appid",
-        "xxx"
+        "LocalFlow"
       ]
     ],
     "apiKeyQueryParam": "appid",
