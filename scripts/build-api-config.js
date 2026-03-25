@@ -881,7 +881,7 @@ The Sirene API provides access to the French National Register of Businesses and
 
 ### SEARCH PARAMETERS (POST /ads) 
 - **publisherTypes**: \`professional\`, \`individual\`. Default is \`['professional', 'individual']\`.
-- **locations**: List of objects: \`{ "inseeCode": "..." }\`, \`{ "postalCode": "..." }\`, or \`{ "departmentCode": 75 }\`.
+- **locations**: List of objects: \`{ "inseeCode": "..." }\`, \`{ "postalCode": "..." }\`, \`{ "coordinates": [longitude, latitude] }\`, or \`{ "departmentCode": 75 }\`.
 - **radius**: Search radius in kilometers (possible values from 1 to 100).
 - **box**: Bounding box defined by \`[[longitude, latitude], [longitude, latitude]]\` (top-left and bottom-right coordinates).
 - **types**: Array containing \`"sale"\` or \`"rental"\`. Default is \`['sale', 'rental']\`.
