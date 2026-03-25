@@ -134,6 +134,9 @@ Available WFS layers to be used in the TYPENAMES param include (*IMPORTANT*: do 
 * \`essai_gpkg_raster_v2_gpkg_03-02-2025_wfs:composantes_de_la_trame_verte_nsm\` (trame verte et bleue, ZNIEFF 1 et ZNIEFF 2)
 
 IMPORTANT: 
+ALWAYS use the following template that works for all layers when calling the WFS endpoint, keep the explicit EPSG:4326 coordinate system, and replace the TYPENAMES and BBOX parameters:
+\`https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=patrinat_pnr:pnr&BBOX=45.1,-1.28,49.18,1.28,urn:ogc:def:crs:EPSG::4326&SRSNAME=urn:ogc:def:crs:EPSG::4326&OUTPUTFORMAT=application/json\`
+
 - Coordinate Order: Geocoding and WFS GeoJSON return [Longitude, Latitude]. 
 - WFS BBOX is [LatMin, LonMin, LatMax, LonMax]
 - Parameter naming: Use \`lon\` for geocoding/elevation and \`lon,lat\` strings for routing.
