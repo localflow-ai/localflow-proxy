@@ -211,8 +211,8 @@
     "id": "recherche-entreprises",
     "waitMs": 100,
     "baseUrl": "https://recherche-entreprises.api.gouv.fr",
-    "description": "Official French aggregator (Sirene + RNE + Labels). Best for search bars and company leader names.",
-    "prompt": "Use GET https://recherche-entreprises.api.gouv.fr/search?q={query}."
+    "description": "Official French aggregator (Sirene + RNE + Labels). Best for search companies and company leader names.",
+    "prompt": "Use `https://recherche-entreprises.api.gouv.fr/search?q={query}` for a textual search without location constraints.\n        \nUse `https://recherche-entreprises.api.gouv.fr/near_point?lat={lat}&long={long}&radius={radius}` for a location-based search where radius is in kilometers (default 5, max 50).\n\nAdditional (optional) parameters for both endpoints are:\n- `activite_principale`: Code NAF exact (ex: 41.20Z)\n- `section_activite_principale`: Lettre de section (ex: F pour Construction, C pour Industrie)\n- `tranche_effectif_salarie`: Tranche INSEE (ex: 21 pour 50 à 99 salariés)\n- `categorie_entreprise`: PME, ETI, GE\n- `code_postal`: Filter by one or more postal codes.\n- `est_entrepreneur_individuel`: true ou false\n- `est_organisme_formation`: Entreprise de formation\n- `est_rge`: Find companies with \"Reconnu Garant de l'Environnement\" label.\n- `est_ess`: Filter for Social and Solidarity Economy (ESS) companies.\n- `est_bio`: Certifié Agriculture Biologique\n- `nom_personne`: Search for companies managed by a specific person.\n- `ca_min / ca_max`: Filter by turnover (CA) in Euros.\n- `etat_administratif`: A (Actif) ou C (Cessé)\n- `include`: 'dirigeants', 'finances', 'complements' to include additional data in the response (multiple occurences allowed).\n- `page`: Page number for pagination (starts at 1).\n- `per_page`: Number of results per page (default 20, max 100).\n"
   },
   {
     "topic": "Global Business Search",
