@@ -253,9 +253,6 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         }
 
         if (apiKey) {
-            if (dataSource.apiKeyHeader) {
-                requestHeaders[dataSource.apiKeyHeader] = apiKey;
-            }
             if (dataSource.apiKeyQueryParam) {
                 const url = new URL(targetUrl);
                 url.searchParams.set(dataSource.apiKeyQueryParam, apiKey);
@@ -273,43 +270,34 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
     logger.info('Proxying %s: %s -> %s', req.method, targetUrl, finalUrl);
 
     const forbiddenRequestHeaders = [
-        'host', 'referer', 'x-forwarded-for', 'x-real-ip', 'cookie',
-        'connection', 'content-length'
+        'host', 'origin', 'referer', 'cookie', 'connection', 'content-length', 'authorization'
     ];
 
-    if (dataSource.headerPolicy === 'stealth') {
-        forbiddenRequestHeaders.push(...[
-            'origin', 'x-forwarded-host', 'x-forwarded-server',
-            'x-forwarded-for', 'x-real-ip', 'user-agent',
-            'authorization', 'cookie', 'x-proxy-token'
-        ])
-    }
+    const forbiddenRequestHeadersPrexixes = [
+        'x-forwarded-', 'x-proxy-', 'sec-'
+    ];
 
-    for (const key of Object.keys(req.headers)) {
+    for (const [key, value] of Object.entries(req.headers)) {
         const lowerKey = key.toLowerCase();
 
-        if (
-            forbiddenRequestHeaders.includes(lowerKey) ||
-            lowerKey.startsWith('sec-') ||
-            lowerKey === 'x-proxy-token' ||
-            lowerKey === 'x-proxy-api-key' ||
-            lowerKey.startsWith('x-forwarded-') // Very important!
-        ) {
-            continue;
-        }
+        if (forbiddenRequestHeaders.includes(lowerKey)) continue;
+        if (forbiddenRequestHeadersPrexixes.some(p => lowerKey.startsWith(p))) continue;
 
-        requestHeaders[lowerKey] = req.headers[key];
-    }
-    const defaultUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
-
-    if (dataSource.headerPolicy === 'stealth') {
-        requestHeaders['User-Agent'] = defaultUA;
-    } else if (!requestHeaders['User-Agent'] && !requestHeaders['user-agent']) {
-        requestHeaders['User-Agent'] = defaultUA;
+        requestHeaders[lowerKey] = value;
     }
 
-    const targetUrlObj = new URL(finalUrl);
-    requestHeaders['host'] = targetUrlObj.host;
+    if (apiKey && dataSource.apiKeyHeader) {
+        requestHeaders[dataSource.apiKeyHeader.toLowerCase()] = apiKey;
+    }
+    requestHeaders['user-agent'] = dataSource.requiredUserAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+    if (dataSource.requiredReferer) {
+        requestHeaders['referer'] = dataSource.requiredReferer;
+    }
+    if (dataSource.requiredOrigin) {
+        requestHeaders['origin'] = dataSource.requiredOrigin;
+    }
+
+    delete requestHeaders['host'];
 
     console.log("FINAL OUTBOUND HEADERS:", requestHeaders);
 
