@@ -508,22 +508,6 @@ interface PPR { idGaspar: string; libPpr: string; etatProcedure: string; zonageR
 
     // ========================================================================================================    
     {
-        topic: "Environmental Data",
-        name: "OpenWeatherMap",
-        id: "openweathermap",
-        rewriteRules: [
-            ['decrypt-query-param', 'appid'],
-            ['inject-query-param', 'appid', 'xxx']
-        ],
-        apiKeyQueryParam: "appid",
-        waitMs: 500,
-        baseUrl: "https://api.openweathermap.org/data/2.5",
-        description: "Current weather and forecasts for any coordinate.",
-        prompt: "Use GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}. Do not include the appid query parameter because the proxy will inject it automatically."
-    },
-
-    // ========================================================================================================    
-    {
         topic: "Urbanisme et Environnement",
         name: "Cerema Cartofriches (Preprod)",
         id: "cerema-cartofriches-preprod",
@@ -661,14 +645,24 @@ interface PVGISData {
     // ========================================================================================================    
     {
         topic: "Demographics & Local Stats",
-        name: "INSEE Melodi (Local Data)",
+        name: "INSEE Melodi",
         id: "insee-melodi",
         waitMs: "500",
-        baseUrl: "https://api.insee.fr/donnees-locales/v1",
-        apiKeyHeader: "X-INSEE-Api-Key-ID",
-        //apiKeyHeader: "Authorization",
-        description: "Socio-economic data at the local level: population density, age brackets, housing types, and employment stats by city or area.",
-        prompt: "Use the INSEE Melodi API to retrieve demographic statistics for specific French territories."
+        baseUrl: "https://api.insee.fr/melodi",
+        apiKey: "Bearer 1845eea1-69f0-4d28-85ee-a169f03d28a0",
+        apiKeyHeader: "Authorization",
+        description: "Socio-economic data at the local level: population density, age brackets, housing types, business and employment stats by city or area.",
+        prompt: `Use the INSEE Melodi API at \`https://api.insee.fr/melodi\` to retrieve demographic statistics for specific French territories.
+
+### Examples:
+
+- **Avialable datasets**: \`https://api.insee.fr/melodi/V2/catalog/all\`
+- **Population data**: \`https://api.insee.fr/melodi/data/DS_POPULATIONS_REFERENCE?GEO=DEP-44\`
+- **Business creations**: \`https://api.insee.fr/melodi/data/DS_SIDE_CREA_ENT_SERIES?TIME_PERIOD=2023\`
+
+### Vibe coding process:
+If your query does not work, provide the user with a list of available datasets and their codes from \`/melodi/V2/catalog/all\` and ask them to choose the correct one for their query.
+`
     },
 
     // ========================================================================================================    
@@ -677,11 +671,22 @@ interface PVGISData {
         name: "INSEE BDM (Economic Series)",
         id: "insee-bdm",
         waitMs: "500",
-        baseUrl: "https://api.insee.fr/series/v1",
-        apiKeyHeader: "X-INSEE-Api-Key-ID",
-        //apiKeyHeader: "Authorization",
+        baseUrl: "https://api.insee.fr/series/BDM",
+        apiKey: "Bearer 1845eea1-69f0-4d28-85ee-a169f03d28a0",
+        apiKeyHeader: "Authorization",
         description: "Time-series data for the French economy. Includes the Consumer Price Index (Inflation), GDP growth, and construction cost indices.",
-        prompt: "Query economic indices and time series data via the INSEE BDM endpoints."
+        prompt: `Use \`https://api.insee.fr/series/BDM\` to query economic indices and time series data via the INSEE BDM endpoints.
+        
+### Example Queries:
+**Series Catalog**: \`https://api.insee.fr/series/BDM/V1/dataflow/all\` (to find available series and their codes).
+**Price Index (Inflation)**: \`https://api.insee.fr/series/BDM/V1/data/SERIES_BDM/001763119\`
+
+### Result structure:
+Do not pass any accept headers. The API always returns SDMX-ML formatted XML.
+
+### Vibe coding process:
+If your query does not work, provide the user with a list of available series and their codes from \`/series/BDM/V1/dataflow/all\` and ask them to choose the correct one for their query.
+        `
     },
 
     // ========================================================================================================    
@@ -848,7 +853,7 @@ The Sirene API provides access to the French National Register of Businesses and
         id: "openweathermap",
         rewriteRules: [
             ['decrypt-query-param', 'appid'],
-            ['inject-query-param', 'appid', 'xxx']
+            ['inject-query-param', 'appid', 'LocalFlow']
         ],
         apiKeyQueryParam: "appid",
         waitMs: 500,
