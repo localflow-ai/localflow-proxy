@@ -772,7 +772,7 @@ Additional (optional) parameters for both endpoints are:
 - \`etat_administratif\`: A (Actif) ou C (Cessé)
 - \`include\`: 'dirigeants', 'finances', 'complements' to include additional data in the response (multiple occurences allowed).
 - \`page\`: Page number for pagination (starts at 1).
-- \`per_page\`: Number of results per page (default 20, max 100).
+- \`per_page\`: Number of results per page (max 25).
 `
     },
 
