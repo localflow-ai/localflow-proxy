@@ -301,6 +301,8 @@ class OdooConnector extends BaseConnector {
     logger.debug('getData %s %s %s %s %s', objectType, fields, JSON.stringify(where), limit, order);
     objectType = this.normalizeInputObjectType(objectType);
 
+    logger.debug('objectType %s', objectType);
+
     const orderString = order
       ? Object.entries(order)
         .map(([field, dir]) => `${this.normalizeInputKey(objectType, field)} ${dir.toUpperCase() === 'DESC' ? 'desc' : 'asc'}`)
