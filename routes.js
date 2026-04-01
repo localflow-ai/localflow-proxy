@@ -695,7 +695,7 @@ router.get('/data/:objectType', asyncHandler(async (req, res, next) => {
         });
         res.json(result);
     } catch (err) {
-        logger.error('getData error', err);
+        logger.error('getData error: %s', err.message);
         return res.status(500).json({
             success: false,
             error: {
