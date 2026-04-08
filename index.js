@@ -9,7 +9,7 @@ const logger = getLogger('index');
 const app = express();
 app.use(cors({
     origin: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token', 'X-Proxy-API-Key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token', 'X-Proxy-API-Key', 'Range'],
     credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
