@@ -10,6 +10,7 @@ const { OdooConnector } = require('./connectors/odoo.js');
 const { PublicConnector } = require('./connectors/public.js');
 const { trackAccess } = require('./accessTracker.js');
 const { encrypt, decrypt } = require('./encryption.js');
+const { getOAuth2Token } = require('./oauth2.js');
 const pdf = require('pdf-parse');
 const Bottleneck = require("bottleneck");
 
@@ -265,6 +266,17 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
             }
         }
     }
+
+    if (dataSource.oAuth2TokenUrl) {
+        try {
+            logger.info('Fetching OAuth2 token for data source %s', dataSource.id);
+            const token = await getOAuth2Token(dataSource);
+            logger.info('Obtained OAuth2 token for data source %s: %s', dataSource.id, token.replace(/.(?=.{4})/g, '*'));
+            apiKey = `Bearer ${token}`; 
+        } catch (e) {
+            return res.status(401).json({ error: 'OAuth2 Authentication failed', message: e.message });
+        }
+    }    
 
     const finalUrl = applyRewriteRules(targetUrl, dataSource, apiKey);
     logger.info('Proxying %s: %s -> %s', req.method, targetUrl, finalUrl);

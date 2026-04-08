@@ -169,10 +169,7 @@ interface RoutingRes {
 
 ### Examples
 
-For WFS, call https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=wfs_sup:assiette_sup_s&BBOX=49.10,0.18,49.18,0.28&&OUTPUTFORMAT=application/json and replace the type and bounding box parameters.
-
-
-\`\`\`
+For WFS, call \`https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=wfs_sup:assiette_sup_s&BBOX=49.10,0.18,49.18,0.28&&OUTPUTFORMAT=application/json\` and replace the type and bounding box parameters.
 `
     },
     /*    {
@@ -238,7 +235,6 @@ For WFS, call https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=Ge
 - **timeUnit**: \`minute\`, \`second\`, or \`hour\`.
 - **distanceUnit**: \`meter\` or \`kilometer\`.
 
-### RESPONSE STRUCTURE
 ### RESPONSE STRUCTURE
 The API returns a JSON object containing a GeoJSON 'Polygon' geometry. Use this TypeScript interface:
 
@@ -752,29 +748,345 @@ The Sirene API provides access to the French National Register of Businesses and
         waitMs: 100,
         baseUrl: "https://recherche-entreprises.api.gouv.fr",
         description: "Official French aggregator (Sirene + RNE + Labels). Best for search companies and company leader names.",
-        prompt: `Use \`https://recherche-entreprises.api.gouv.fr/search?q={query}\` for a textual search without location constraints.
+        prompt: `Use \`https://recherche-entreprises.api.gouv.fr/search?q={query}\` for a textual search without location constraints. \`lat\` and \`long\` parameters are *not* allowed for this endpoint.
         
-Use \`https://recherche-entreprises.api.gouv.fr/near_point?lat={lat}&long={long}&radius={radius}\` for a location-based search where radius is in kilometers (default 5, max 50).
+Use \`https://recherche-entreprises.api.gouv.fr/near_point?lat={lat}&long={long}&radius={radius}\` for a location-based search where radius is in kilometers (default 5, max 50). A query parameter is *not* allowed for this endpoint.
 
 Additional (optional) parameters for both endpoints are:
 - \`activite_principale\`: Code NAF exact (ex: 41.20Z)
-- \`section_activite_principale\`: Lettre de section (ex: F pour Construction, C pour Industrie)
 - \`tranche_effectif_salarie\`: Tranche INSEE (ex: 21 pour 50 à 99 salariés)
-- \`categorie_entreprise\`: PME, ETI, GE
-- \`code_postal\`: Filter by one or more postal codes.
+- \`categorie_entreprise\`: PME, ETI, GE (comma-separated if multiple)
+- \`code_postal\`: Filter by one or more postal codes (comma-separated).
+- \`code_commune\`: Filter by one or more city INSEE codes (comma-separated).
+- \`departement\`: Filter by one or more department codes (comma-separated).
+- \`region\`: Filter by one or more region codes (comma-separated).
+- \`egapro_renseignee\`: Filter by companies with or without EGAPRO information.
+- \`est_achats_responsables\`: Filter for companies with responsible purchasing practices.
+- \`est_alim_confiance\`: Filter for companies with the "Alimentation Confiance" label.
+- \`est_association\`: Filter for companies with the "Association" label.
+- \`est_bio\`: Filter for companies with the "Bio" label.
+- \`est_collectivite_territoriale\`: Filter for territorial collectivities (local governments).
+- \`ecpi\`: list of EPCI codes (comma-separated)
+- \`est_patrimoine_vivant\`: Filter for companies with the "Entreprise du Patrimoine Vivant" label.
+- \`est_entrepreneur_spectacle\`: true ou false
 - \`est_entrepreneur_individuel\`: true ou false
 - \`est_organisme_formation\`: Entreprise de formation
 - \`est_rge\`: Find companies with "Reconnu Garant de l'Environnement" label.
 - \`est_ess\`: Filter for Social and Solidarity Economy (ESS) companies.
-- \`est_bio\`: Certifié Agriculture Biologique
+- \`est_qualiopi\`: Filter for companies with the "Qualiopi" certification.
 - \`nom_personne\`: Search for companies managed by a specific person.
+- \`type_personne\`: 'dirigeant' (company leader) or 'elu' (elected official).
+- \`date_naissance_personne_min / date_naissance_personne_max\`: Filter for company leaders born within a specific date range (format YYYY-MM-DD).
 - \`ca_min / ca_max\`: Filter by turnover (CA) in Euros.
+- \`resultat_net_min / resultat_net_max\`: Filter by net result in Euros.
 - \`etat_administratif\`: A (Actif) ou C (Cessé)
-- \`include\`: 'dirigeants', 'finances', 'complements' to include additional data in the response (multiple occurences allowed).
+- \`minimal\`: true to get a minimal response without secondary fields (see \`include\` below). If minimal is false or not set, the response includes all available data fields.
+- \`include\`: 'complements', 'dirigeants', 'finances', 'matching_etablissements', 'siege', 'score' to include additional data in the response (comma-separated). *Important*: this parameters can only bue used with with "minimal=True".
 - \`page\`: Page number for pagination (starts at 1).
 - \`per_page\`: Number of results per page (max 25).
+
+*TIP*: If you want to search for companies in a specific location, you have two options:
+1. *JS search* (preferred for precision): use the \`near_point\` endpoint with the lat/long of your search area and a radius in kilometers, then on the returned results, filter the right ones with a JS filter using \`nom_complet\` or other fields.
+2. *Postal codes*: first find the communes withing your search area and use the \`code_postal\` parameter with the city's postal code in either endpoint.
+
+### Response example:
+\`\`\`json
+{
+  "results": [
+    {
+      "siren": "356000000",
+      "nom_complet": "la poste",
+      "nom_raison_sociale": "LA POSTE",
+      "sigle": null,
+      "nombre_etablissements": 12734,
+      "nombre_etablissements_ouverts": 9524,
+      "siege": {
+        "activite_principale": "53.10Z",
+        "activite_principale_naf25": "53.10A",
+        "activite_principale_registre_metier": null,
+        "annee_tranche_effectif_salarie": "2020",
+        "adresse": "19 RUE DE LA POSTE 31700 CORNEBARRIEU",
+        "caractere_employeur": "O",
+        "cedex": null,
+        "code_pays_etranger": null,
+        "code_postal": "75015",
+        "commune": "75115",
+        "complement_adresse": "DIRECTION GENERALE DE LA POSTE",
+        "coordonnees": "43.292154,5.359134",
+        "date_creation": "2026-04-04",
+        "date_debut_activite": "2014-04-29",
+        "date_fermeture": "2026-04-04",
+        "date_mise_a_jour": "2023-09-21T03:34:50",
+        "date_mise_a_jour_insee": "2023-09-21T03:34:50",
+        "departement": "75",
+        "distribution_speciale": null,
+        "epci": "200058519",
+        "est_siege": false,
+        "etat_administratif": "A",
+        "geo_adresse": "58 Boulevard charles livon 13007 Marseille",
+        "geo_id": "31150_0157_00019",
+        "indice_repetition": null,
+        "latitude": "48.83002",
+        "libelle_cedex": null,
+        "libelle_commune": "PARIS 15",
+        "libelle_commune_etranger": null,
+        "libelle_pays_etranger": null,
+        "libelle_voie": "DU COLONEL PIERRE AVIA",
+        "liste_enseignes": [
+          "LA POSTE"
+        ],
+        "liste_finess": [
+          "950000364"
+        ],
+        "liste_id_bio": [
+          "0923"
+        ],
+        "liste_idcc": [
+          "0923"
+        ],
+        "liste_id_organisme_formation": [
+          "string"
+        ],
+        "liste_rge": [
+          "4131D111",
+          "7122D111"
+        ],
+        "liste_uai": [
+          "0170100S"
+        ],
+        "longitude": "2.275688",
+        "nom_commercial": null,
+        "numero_voie": "9",
+        "region": "11",
+        "siret": "35600000000048",
+        "statut_diffusion_etablissement": "O",
+        "tranche_effectif_salarie": "12",
+        "type_voie": "RUE"
+      },
+      "activite_principale": "53.10Z",
+      "activite_principale_naf25": "53.10A",
+      "categorie_entreprise": "GE",
+      "caractere_employeur": "O",
+      "annee_categorie_entreprise": "2020",
+      "date_creation": "1991-01-01",
+      "date_fermeture": "2026-04-04",
+      "date_mise_a_jour": "2023-09-21T03:34:50",
+      "date_mise_a_jour_insee": "2023-09-21T03:34:50",
+      "date_mise_a_jour_rne": "2023-09-20T02:15:30",
+      "dirigeants": [
+        {
+          "nom": "Dupont",
+          "prenoms": "John",
+          "annee_de_naissance": "1964",
+          "date_de_naissance": "1964-09",
+          "qualite": "Directeur général",
+          "nationalite": "Française",
+          "type_dirigeant": "personne physique"
+        },
+        {
+          "siren": "784824153",
+          "denomination": "string",
+          "qualite": "Commissaire aux comptes titulaire",
+          "type_dirigeant": "personne morale"
+        }
+      ],
+      "etat_administratif": "A",
+      "nature_juridique": "5510",
+      "section_activite_principale": "H",
+      "tranche_effectif_salarie": "53",
+      "annee_tranche_effectif_salarie": "2020",
+      "statut_diffusion": "O",
+      "matching_etablissements": [
+        {
+          "activite_principale": "53.10Z",
+          "activite_principale_naf25": "53.10A",
+          "ancien_siege": false,
+          "annee_tranche_effectif_salarie": "2020",
+          "adresse": "19 RUE DE LA POSTE 31700 CORNEBARRIEU",
+          "caractere_employeur": "O",
+          "code_postal": "75015",
+          "commune": "75115",
+          "date_creation": "2026-04-04",
+          "date_debut_activite": "2014-04-29",
+          "date_fermeture": "2026-04-04",
+          "epci": "200058519",
+          "est_siege": false,
+          "etat_administratif": "A",
+          "geo_id": "31150_0157_00019",
+          "latitude": "48.83002",
+          "libelle_commune": "PARIS 15",
+          "liste_enseignes": [
+            "LA POSTE"
+          ],
+          "liste_finess": [
+            "950000364"
+          ],
+          "liste_id_bio": [
+            "0923"
+          ],
+          "liste_idcc": [
+            "0923"
+          ],
+          "liste_id_organisme_formation": [
+            "string"
+          ],
+          "liste_rge": [
+            "4131D111",
+            "7122D111"
+          ],
+          "liste_uai": [
+            "0170100S"
+          ],
+          "longitude": "2.275688",
+          "nom_commercial": null,
+          "region": "11",
+          "siret": "35600000000048",
+          "statut_diffusion_etablissement": "O",
+          "tranche_effectif_salarie": "12"
+        }
+      ],
+      "finances": {
+        "annee_existence1": {
+          "ca": 0,
+          "resultat_net": 0
+        },
+        "annee_existence2": {
+          "ca": 0,
+          "resultat_net": 0
+        },
+        "annee_existence3": {
+          "ca": 0,
+          "resultat_net": 0
+        }
+      },
+      "complements": {
+        "collectivite_territoriale": {
+          "code": "01",
+          "code_insee": "01",
+          "elus": [
+            {
+              "nom": "string",
+              "prenoms": "string",
+              "annee_de_naissance": "1964",
+              "fonction": "Maire",
+              "sexe": "F"
+            }
+          ],
+          "niveau": "département"
+        },
+        "convention_collective_renseignee": true,
+        "liste_idcc": [
+          "string"
+        ],
+        "liste_finess_juridique": [
+          "string"
+        ],
+        "egapro_renseignee": true,
+        "est_achats_responsables": true,
+        "est_alim_confiance": true,
+        "est_association": false,
+        "est_bio": true,
+        "est_entrepreneur_individuel": false,
+        "est_entrepreneur_spectacle": false,
+        "est_ess": false,
+        "est_finess": false,
+        "est_organisme_formation": true,
+        "est_qualiopi": true,
+        "liste_id_organisme_formation": [
+          "7423P001123"
+        ],
+        "est_rge": false,
+        "est_service_public": false,
+        "est_l100_3": false,
+        "est_siae": false,
+        "est_societe_mission": false,
+        "est_uai": false,
+        "est_patrimoine_vivant": true,
+        "bilan_ges_renseigne": false,
+        "identifiant_association": null,
+        "statut_entrepreneur_spectacle": "string",
+        "type_siae": "string"
+      }
+    }
+  ],
+  "total_results": 1,
+  "page": 1,
+  "per_page": 10,
+  "total_pages": 1
+}
+\`\`\`
+
 `
     },
+
+
+    // ========================================================================================================
+
+{
+        topic: "Job Market",
+        name: "France Travail - Job Offers",
+        id: "france-travail-offres",
+        baseUrl: ["https://api.francetravail.io/partenaire/offresdemploi/v2"],
+        oAuth2TokenUrl: "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire",
+        oAuth2Login: "PAR_localflow_6f27486cbf9bead063a245b0e9c2424e238bf571e09a633f3542e33847eb983e", // App ID
+        oAuth2Password: "653271dffa58721eda274ad37019b558bae2e427b6c4798c1bb14b616936aa0e", // App Key
+        oAuth2Scopes: "o2dsoffre api_offresdemploiv2",
+        apiKeyHeader: "Authorization",        
+        waitMs: 100,
+        baseUrl: "https://api.francetravail.io/partenaire/offresdemploi/v2",
+        description: "Official access to job offers from France Travail (formerly Pôle Emploi) and its partners. Supports searching by keywords, location (INSEE), ROME job codes, and company criteria.",
+        prompt: `Use \`https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search\` to search for job offers. 
+
+**Authentication**: Requires an OAuth2 Bearer Token (Scopes: \`o2dsoffre api_offresdemploiv2\`).
+**Pagination**: Strictly handled via the \`Range\` HTTP Header (e.g., \`Range: offres=0-49\`). The range is limited to 150 results per call. The maximum start index is 3000. Do NOT use "page" as a query parameter.
+
+Search Query Parameters:
+- \`motsCles\`: Keywords (min 2 chars) separated by commas (Logic: AND).
+- \`commune\`: City INSEE code (up to 5 codes separated by commas).
+- \`distance\`: Search radius in km around the city (requires \`commune\`). Use \`distance=0\` for exact city matches only.
+- \`departement\`: Department code (e.g., 33, 75). Up to 5 values.
+- \`region\`: Region code (e.g., 75).
+- \`inclureLimitrophes\`: boolean (true/false) to include bordering departments.
+- \`paysContinent\`: Country or continent code.
+- \`codeROME\`: ROME job code (e.g., D1102). Up to 200 values.
+- \`appellation\`: Specific ROME designation code (e.g., 38444).
+- \`theme\`: ROME job theme (e.g., 12).
+- \`domaine\`: ROME job domain (e.g., G17).
+- \`grandDomaine\`: Large ROME domain (e.g., M18 for IT, H for Industry).
+- \`codeNAF\`: Company APE/NAF code (e.g., 78.20Z). Up to 200 values.
+- \`secteurActivite\`: NAF division (first 2 digits, e.g., 01, 02). Up to 2 values.
+- \`typeContrat\`: Contract type code (e.g., CDI, CDD).
+- \`natureContrat\`: Contract nature code (e.g., E1).
+- \`dureeContratMin / dureeContratMax\`: Contract duration in months (double 0 to 99).
+- \`dureeHebdo\`: 0 (Unspecified), 1 (Full-time), 2 (Part-time).
+- \`dureeHebdoMin / dureeHebdoMax\`: Format HHMM (e.g., 3500 for 35h).
+- \`tempsPlein\`: boolean (true/false).
+- \`experience\`: 0 (Unspecified), 1 (< 1 year), 2 (1 to 3 years), 3 (> 3 years).
+- \`experienceExigence\`: D (beginner accepted), S (desired), E (required).
+- \`niveauFormation\`: Education level code (e.g., NV3).
+- \`permis\`: Driver's license code (e.g., B).
+- \`qualification\`: 0 (non-executive/non-cadre), 9 (executive/cadre).
+- \`salaireMin\`: Minimum salary (requires \`periodeSalaire\`).
+- \`periodeSalaire\`: M (Monthly), A (Annual), H (Hourly), C (Per performance/Cachet).
+- \`minCreationDate / maxCreationDate\`: ISO 8601 format (yyyy-MM-dd'T'HH:mm:ss'Z').
+- \`publieeDepuis\`: Maximum days since publication (integer).
+- \`origineOffre\`: 1 (France Travail), 2 (Partner).
+- \`partenaires\`: List of partner codes to include/exclude.
+- \`modeSelectionPartenaires\`: INCLUS or EXCLU.
+- \`offresManqueCandidats\`: boolean. Filter for hard-to-fill positions.
+- \`offresMRS\`: boolean. Offers with "Recrutement par Simulation" (MRS).
+- \`accesTravailleurHandicape\`: boolean. Open to workers with disabilities.
+- \`entreprisesAdaptees\`: boolean. Adapted enterprises.
+- \`employeursHandiEngages\`: boolean. Inclusive employers.
+- \`sort\`: 0 (Relevance), 1 (Creation date desc), 2 (Distance asc).
+
+### Critical LLM Implementation Details:
+1. **Response Handling**: Results are nested in a \`resultats\` array. If no results are found, the API returns HTTP 204 (No Content).
+2. **Metadata**: The total count of results is only available in the \`Content-Range\` response header (format: \`offres p-d/total\`). 
+3. **Parameter Logic**: The filter between \`typeContrat\` and \`natureContrat\` uses an **OR** operator, meaning searching for "CDI" with "natureContrat=E1" returns all CDI offers PLUS all E1 offers.
+4. **Distance Filtering**: The API search behavior for \`commune\` includes a buffer of +30% beyond the \`distance\` parameter. Use \`distance=0\` for strict city boundaries.
+5. **Special Cases**: Searches on Paris (75) or Lyon always return results for the entire city regardless of district (arrondissement) if the city center is within the radius.`
+    },    
 
     // ========================================================================================================    
     {
