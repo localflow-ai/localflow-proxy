@@ -109,8 +109,8 @@ const throttler = (req, res, next) => {
 
 const publicGroup = new Bottleneck.Group({
     // These settings apply to EVERY limiter created within the group
-    reservoir: 200,           
-    reservoirRefreshAmount: 200,
+    reservoir: 40,           
+    reservoirRefreshAmount: 40,
     reservoirRefreshInterval: 60 * 60 * 1000 * 24, 
 
     // KEY FIXES:
@@ -194,13 +194,13 @@ router.use(async (req, res, next) => {
     }
 
     // --- Limiter for public connector ---
-    if (session.type === 'public') {
+    if (session.type === 'public' && !req.path.includes('access-stats')) {
         const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
+        const ipLimiter = publicGroup.key(clientIp);
         try {
-            // schedule() will check the reservoir for this specific IP limiter
-            // If the IP has exceeded 100 calls, it will throw a Bottleneck Error
-            await publicGroup.key(clientIp).schedule(() => Promise.resolve());
+            await ipLimiter.schedule(() => Promise.resolve());
+            const remaining = await ipLimiter.currentReservoir();
+            logger.debug(`IP: ${clientIp} | Quota Remaining: ${remaining}`);            
         } catch (err) {
             logger.warn('Rate limit triggered for IP %s', clientIp);
             return res.status(429).json({
