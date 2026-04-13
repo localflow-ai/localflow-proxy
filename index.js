@@ -7,6 +7,7 @@ const logger = getLogger('index');
 
 //dotenv.config();
 const app = express();
+app.set('trust proxy', true);
 app.use(cors({
     origin: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token', 'X-Proxy-API-Key', 'Range'],
