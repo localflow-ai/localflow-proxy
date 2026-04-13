@@ -107,14 +107,17 @@ const throttler = (req, res, next) => {
         });
 };
 
-// Create a group of limiters
 const publicGroup = new Bottleneck.Group({
-    reservoir: 30,           // Initial "tokens" (max calls)
-    reservoirRefreshAmount: 30,
-    reservoirRefreshInterval: 60 * 60 * 1000 * 24, // Reset every 24 hours
+    // These settings apply to EVERY limiter created within the group
+    reservoir: 200,           
+    reservoirRefreshAmount: 200,
+    reservoirRefreshInterval: 60 * 60 * 1000 * 24, 
 
-    // Strategy: fail immediately when the reservoir is empty
-    rejectOnDrop: true
+    // KEY FIXES:
+    maxConcurrent: 1,         // Only allow 1 active check
+    highWater: 0,             // Do not allow any queueing
+    strategy: Bottleneck.strategy.BLOCK, // Immediately reject if limits hit
+    rejectOnDrop: true        // Ensure the promise rejects if blocked
 });
 
 // Optional: Log when an IP is blocked
