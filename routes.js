@@ -194,7 +194,7 @@ router.use(async (req, res, next) => {
     }
 
     // --- Limiter for public connector ---
-    if (session.type === 'public' && !req.path.includes('access-stats')) {
+    if (session.type === 'public' && (req.path.includes('api-proxy') || req.path.includes('genai'))) {
         const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         const ipLimiter = publicGroup.key(clientIp);
         try {
