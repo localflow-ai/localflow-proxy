@@ -37,9 +37,10 @@ _COL_GAP = 5.5   # pt — see module docstring
 def _extract_page(page) -> str:
     words = page.extract_words(x_tolerance=3, y_tolerance=3)
 
-    # Fallback for scanned / image-only pages
+    # Fallback for scanned / image-only pages.
+    # layout=True requires pdfplumber >= 0.7; use plain extract_text() for compatibility.
     if not words:
-        text = page.extract_text(layout=True) or ''
+        text = page.extract_text() or ''
         return '\n'.join(l.rstrip() for l in text.splitlines() if l.strip())
 
     # Group words into rows by y-position
