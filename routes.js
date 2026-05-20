@@ -527,6 +527,9 @@ function extractWithPdfplumber(buffer) {
         let stderr = '';
         py.stdout.on('data', d => { stdout += d; });
         py.stderr.on('data', d => { stderr += d; });
+        // Absorb EPIPE silently — happens when Python exits before reading all stdin.
+        // The 'close' handler below will surface the actual error via stderr/exit code.
+        py.stdin.on('error', () => {});
         py.stdin.write(buffer);
         py.stdin.end();
         py.on('close', code => {
