@@ -11,7 +11,7 @@ const { PublicConnector } = require('./connectors/public.js');
 const { trackAccess } = require('./accessTracker.js');
 const { encrypt, decrypt } = require('./encryption.js');
 const { getOAuth2Token } = require('./oauth2.js');
-const pdf = require('pdf-parse');
+const { spawn } = require('child_process');
 const Bottleneck = require("bottleneck");
 
 const { getLogger } = require('./logging');
@@ -520,102 +520,66 @@ const normalizeForFuzzy = (str) => {
         .replace(/[^a-z0-9]/g, "");      // Remove punctuation/spaces
 };
 
-async function pagerender(pageData) {
-    const textContent = await pageData.getTextContent({
-        normalizeWhitespace: true,
-        disableCombineTextItems: false
-    });
-
-    const items = textContent.items.sort((a, b) => {
-        if (Math.abs(a.transform[5] - b.transform[5]) > 3) {
-            return b.transform[5] - a.transform[5];
-        }
-        return a.transform[4] - b.transform[4];
-    });
-
-    let lastY = -1;
-    let lastXEnd = -1;
-    let text = '';
-
-    for (let item of items) {
-        let str = item.str;
-        if (!str.replace(/\s+/g, '')) continue;
-
-        // --- DÉTECTION DU STYLE ---
-        const style = textContent.styles[item.fontName];
-        const fontName = style ? (style.fontFamily || "").toLowerCase() : "";
-
-        const isBold = fontName.includes('bold') || fontName.includes('black') || fontName.includes('heavy');
-        const isItalic = fontName.includes('italic') || fontName.includes('oblique');
-
-        let styledStr = str;
-        if (isBold && isItalic) styledStr = `***${str.trim()}***`;
-        else if (isBold) styledStr = `**${str.trim()}**`;
-        else if (isItalic) styledStr = `*${str.trim()}*`;
-
-        const currentY = item.transform[5];
-        const currentX = item.transform[4];
-
-        // --- GESTION DES LIGNES ---
-        if (lastY !== -1 && Math.abs(currentY - lastY) > 3) {
-            text += (Math.abs(currentY - lastY) > 12) ? '\n\n' : '\n';
-            lastXEnd = -1;
-        }
-
-        // --- ESPACES ---
-        if (lastXEnd !== -1 && (currentX - lastXEnd) > 1.0) {
-            if (!text.endsWith(' ') && !styledStr.startsWith(' ')) {
-                text += ' ';
+function extractWithPdfplumber(buffer) {
+    return new Promise((resolve, reject) => {
+        const py = spawn('python3', [path.join(__dirname, 'scripts/extract_pdf.py')]);
+        let stdout = '';
+        let stderr = '';
+        py.stdout.on('data', d => { stdout += d; });
+        py.stderr.on('data', d => { stderr += d; });
+        py.stdin.write(buffer);
+        py.stdin.end();
+        py.on('close', code => {
+            if (code !== 0) return reject(new Error(stderr.trim() || 'PDF extraction script failed'));
+            try {
+                const result = JSON.parse(stdout);
+                if (result.error) return reject(new Error(result.error));
+                resolve(result);
+            } catch (e) {
+                reject(new Error('Invalid JSON from PDF extractor'));
             }
-        }
-
-        // --- STRUCTURE ---
-        const isHeader = (str === str.toUpperCase() && str.length > 4) || /^[0-9A-Z]{1,2}[\.\-\)]\s/.test(str);
-        if (isHeader && (text.endsWith('\n\n') || text === '')) {
-            styledStr = `### ${styledStr}`;
-        }
-        if (/^[\u2022\u00b7\u25cf\-\*]/.test(str.trim())) {
-            styledStr = `- ${str.trim().substring(1).trim()}`;
-        }
-
-        text += styledStr;
-        lastY = currentY;
-        lastXEnd = currentX + (item.width || 0);
-    }
-
-    // 1. Fusionne les blocs de gras adjacents : **M****odification** -> **Modification**
-    // 2. Gère aussi les cas avec un espace : **M** **odification** -> **M modification**
-    return text
-        .replace(/\*\*\s*\*\*/g, '')  // Fusionne le gras
-        .replace(/\*\s*\*/g, '')      // Fusionne l'italique
-        .replace(/\*\*\*\s*\*\*\*/g, ''); // Fusionne le combo
+        });
+        py.on('error', err => reject(new Error(`Failed to start Python: ${err.message}`)));
+    });
 }
 
-router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
-    const { url, searchString } = req.body;
-
-    if (!url) return res.status(400).json({ error: 'Missing PDF URL' });
-
-    // 1. Fetch PDF
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.statusText}`);
-    const buffer = Buffer.from(await response.arrayBuffer());
-
-    const pagesContent = [];
-
-    // 2. Extraction via the optimized pagerender (Heuristics)
-    const options = {
-        pagerender: async (pageData) => {
-            const text = await pagerender(pageData);
-            pagesContent.push({
-                text: text,
-                normalized: normalizeForFuzzy(text)
-            });
-            return text;
+router.post('/common/extract-pdf', throttler,
+    (req, res, next) => {
+        const ct = req.headers['content-type'] || '';
+        if (ct.includes('application/pdf') || ct.includes('application/octet-stream')) {
+            express.raw({ type: '*/*', limit: '50mb' })(req, res, next);
+        } else {
+            next();
         }
-    };
+    },
+    asyncHandler(async (req, res) => {
+    const ct = req.headers['content-type'] || '';
+    const isBinaryUpload = ct.includes('application/pdf') || ct.includes('application/octet-stream');
 
-    const data = await pdf(buffer, options);
+    let buffer;
+    let searchString;
+
+    if (isBinaryUpload) {
+        if (!req.body || !req.body.length) return res.status(400).json({ error: 'Missing PDF file in request body' });
+        buffer = req.body;
+        searchString = req.query.searchString;
+    } else {
+        const { url, searchString: bodySearchString } = req.body;
+        searchString = bodySearchString;
+        if (!url) return res.status(400).json({ error: 'Missing PDF URL or file' });
+
+        // 1. Fetch PDF
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.statusText}`);
+        buffer = Buffer.from(await response.arrayBuffer());
+    }
+
+    // 2. Extract text via pdfplumber (layout-preserving, handles complex tables)
+    const { pages: extractedPages, metadata: pdfMeta } = await extractWithPdfplumber(buffer);
+    const pagesContent = extractedPages.map(p => ({
+        text: p.text,
+        normalized: normalizeForFuzzy(p.text)
+    }));
 
     // 3. Multi-Criteria Search Logic
     let finalContent = "";
@@ -652,15 +616,7 @@ router.post('/common/extract-pdf', throttler, asyncHandler(async (req, res) => {
     // 4. Enhanced Response with Metadata
     res.json({
         success: true,
-        metadata: {
-            title: data.info?.Title || "Unknown",
-            author: data.info?.Author || "Unknown",
-            creator: data.info?.Creator || "Unknown",
-            producer: data.info?.Producer || "Unknown",
-            creationDate: data.info?.CreationDate || null,
-            modificationDate: data.info?.ModDate || null,
-            totalPdfPages: data.numpages
-        },
+        metadata: pdfMeta,
         returnedPages: (finalContent.match(/## Page/g) || []).length,
         content: finalContent.trim() || "No matches found for the given search criteria."
     });
