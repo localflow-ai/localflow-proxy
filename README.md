@@ -2,28 +2,36 @@
 
 > **Apache 2.0 License** — See [LICENSE](#license) at the bottom of this file.
 
-The LocalFlow Proxy is the server-side component of the [LocalFlow](https://localflow.fr) ecosystem. It acts as a secure middleware layer between the browser application and external services: it manages sessions, encrypts and forwards LLM API keys, proxies whitelisted external APIs callable from analysis formulas, extracts PDF text, and bridges CRM/ERP connections through a unified REST interface.
+The LocalFlow Proxy is the mandatory network gateway for [local-first AI](https://github.com/localflow-ai/localflow-core) applications. When a local-first AI formula executes in the browser sandbox, all interactions with the outside world are channelled exclusively through this proxy — no direct outbound calls are possible from the sandbox. This makes the proxy the single point of control ensuring that sensitive data from your business systems never leaves your network without explicit authorization.
+
+It serves five key purposes:
+
+- **Security and session management** — authenticate users against your business systems (CRM, ERP, or public sessions), manage session tokens and their lifecycle, and handle API-key encryption so that secrets are never exposed to the browser
+- **API governance** — define and administer which external APIs the local-first AI execution environment may call; supports BYOK (bring your own key), per-source throttling, URL whitelisting, and OAuth 2.0 token exchange
+- **Server-side edge services** — offload tasks that benefit from server-side execution, such as PDF text extraction and OCR; these services deliver higher quality results than in-browser alternatives and keep heavy computation off the client
+- **LLM bridge** — relay formula-generation requests to the LLM (currently Gemini, pluggable), decrypting the user's API key at request time so it is never transmitted in plaintext
+- **Data flow monitoring** — track and audit what data enters and leaves the local-first AI sandbox, giving operators visibility over the information boundary between the browser and external services
 
 **Related repositories:**
-- [localflow-core](https://github.com/localflow-ai/localflow-core) — the client-side AI assistant library
+- [localflow-core](https://github.com/localflow-ai/localflow-core) — the client-side local-first AI library
 - [localflow-app](https://github.com/localflow-ai/localflow-app) — the LocalFlow application
 
 ---
 
 ## Table of contents
 
-1. [How it fits in LocalFlow](#how-it-fits-in-localflow)
-2. [Features](#features)
-3. [Getting started](#getting-started)
-4. [Configuration](#configuration)
-5. [API reference](#api-reference)
-6. [Connectors](#connectors)
-7. [Contributing](#contributing)
+1. [Architecture](#architecture)
+2. [Getting started](#getting-started)
+3. [Configuration](#configuration)
+4. [API reference](#api-reference)
+5. [Connectors](#connectors)
+6. [Contributing](#contributing)
+7. [Roadmap](#roadmap)
 8. [License](#license)
 
 ---
 
-## How it fits in LocalFlow
+## Architecture
 
 ```
 Browser (localflow-app)
@@ -32,28 +40,27 @@ Browser (localflow-app)
         ▼
 LocalFlow Proxy                 ← this repository
         │
-        ├── /common/genai  ──────► Gemini (or other LLM)
-        ├── /common/api-proxy ───► Whitelisted external APIs
-        ├── /common/extract-pdf ► PDF extraction (Python/pdfplumber)
-        ├── /session             Session auth (Odoo, Salesforce, public)
-        ├── /metadata            CRM/ERP object metadata
-        └── /data                CRM/ERP CRUD operations
+        ├── /common/genai  ──────► LLM (Gemini or other)        [LLM bridge]
+        ├── /common/api-proxy ───► Whitelisted external APIs     [API governance]
+        ├── /common/extract-pdf ► PDF extraction (pdfplumber)    [Edge services]
+        ├── /common/access-stats  Data flow tracking             [Monitoring]
+        ├── /session             Auth + session management       [Security]
+        ├── /metadata            CRM/ERP object metadata         [Connectors]
+        └── /data                CRM/ERP CRUD operations         [Connectors]
 ```
 
-The proxy holds all secrets (LLM keys, CRM credentials, master encryption key). The browser never sees them. LLM API keys entered by users are encrypted with AES-256-GCM using a per-organisation derived key before being stored by the client, and are decrypted only inside the proxy at request time.
+All secrets — LLM keys, CRM credentials, master encryption key — live exclusively on the proxy. The browser never sees them. LLM API keys entered by users are encrypted with AES-256-GCM using a per-organisation derived key before being stored client-side, and are decrypted only inside the proxy at request time.
 
----
+### Technical highlights
 
-## Features
-
-- **Session management** — token-based sessions (24 h sliding TTL, up to 1 000 concurrent sessions) over any registered connector
-- **LLM forwarding** — decrypt user API key, forward request to Gemini (pluggable); the key is never sent to the browser in plaintext
-- **External API proxy** — whitelist-based forwarding of external API calls made from sandboxed analysis formulas; supports API-key injection (query param, header, body, route placeholder), OAuth 2.0 token exchange, URL rewrite rules, and per-source rate limiting
-- **PDF extraction** — layout-preserving text extraction via Python/pdfplumber with optional page-search filtering
-- **CRM connectors** — Odoo (XML-RPC) and Salesforce (jsforce) out of the box; a `public` no-auth connector for evaluation sessions
-- **Field and object-type mapping** — session-scoped bidirectional field/type aliases so the client can use its own naming conventions regardless of the backend's
-- **Encryption helpers** — AES-256-GCM encrypt/decrypt endpoints so the client can store encrypted credentials without ever holding the master key
-- **Rate limiting** — per-IP quota on public sessions (Bottleneck); throttled PDF extraction queue
+- Token-based sessions with 24 h sliding TTL and up to 1 000 concurrent sessions
+- AES-256-GCM encryption with per-org key derivation from a single master key
+- API-key injection via query param, header, request body, or route placeholder
+- OAuth 2.0 client-credentials token exchange for third-party APIs
+- URL rewrite rules applied before forwarding
+- Per-source throttling and per-IP rate limiting on public sessions (Bottleneck)
+- Layout-preserving PDF extraction via Python/pdfplumber with keyword-based page filtering
+- Session-scoped bidirectional field and object-type aliases (connector field mapping)
 
 ---
 
