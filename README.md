@@ -34,7 +34,7 @@ It serves five key purposes:
 ## Architecture
 
 ```
-Browser (localflow-app)
+Browser (local-first AI app)
         │
         │  HTTPS — session token in Authorization header
         ▼
