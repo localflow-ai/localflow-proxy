@@ -131,7 +131,7 @@ pkill -f "node index.js"   # stop any running instance
 
 ### API descriptor file (`api-config.json`)
 
-The `api-config.json` file defines which external APIs analysis formulas are allowed to call through the `/common/api-proxy` endpoint. Edit the file directly then run:
+The `api-config.json` file defines which external APIs analysis formulas are allowed to call through the `/common/api-proxy` endpoint. **Do not edit `api-config.json` directly** — it is auto-generated. Edit `scripts/build-api-config.js` instead, then run:
 
 ```bash
 node scripts/build-api-config.js

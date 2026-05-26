@@ -107,22 +107,33 @@ const throttler = (req, res, next) => {
         });
 };
 
-const publicGroup = new Bottleneck.Group({
-    // These settings apply to EVERY limiter created within the group
-    reservoir: 40,           
-    reservoirRefreshAmount: 40,
-    reservoirRefreshInterval: 60 * 60 * 1000 * 24, 
-
-    // KEY FIXES:
-    maxConcurrent: 1,         // Only allow 1 active check
-    highWater: 0,             // Do not allow any queueing
-    strategy: Bottleneck.strategy.BLOCK, // Immediately reject if limits hit
-    rejectOnDrop: true        // Ensure the promise rejects if blocked
+// Public API proxy: 5000 calls/day per IP, serialized to respect per-datasource waitMs
+const publicApiGroup = new Bottleneck.Group({
+    reservoir: 5000,
+    reservoirRefreshAmount: 5000,
+    reservoirRefreshInterval: 60 * 60 * 1000 * 24,
+    maxConcurrent: 1,
+    highWater: 500,
+    strategy: Bottleneck.strategy.OVERFLOW,
+    rejectOnDrop: true
 });
 
-// Optional: Log when an IP is blocked
-publicGroup.on('failed', (error, jobInfo) => {
-    logger.warn('Rate limit job failed for IP: %s', jobInfo.options.id);
+// Public GenAI: 40 calls/day per IP
+const publicGenaiGroup = new Bottleneck.Group({
+    reservoir: 40,
+    reservoirRefreshAmount: 40,
+    reservoirRefreshInterval: 60 * 60 * 1000 * 24,
+    maxConcurrent: 1,
+    highWater: 10,
+    strategy: Bottleneck.strategy.OVERFLOW,
+    rejectOnDrop: true
+});
+
+publicApiGroup.on('failed', (error, jobInfo) => {
+    logger.warn('API rate limit hit for IP: %s', jobInfo.options.id);
+});
+publicGenaiGroup.on('failed', (error, jobInfo) => {
+    logger.warn('GenAI rate limit hit for IP: %s', jobInfo.options.id);
 });
 
 router.post('/session', express.json(), asyncHandler(async (req, res) => {
@@ -194,19 +205,24 @@ router.use(async (req, res, next) => {
     }
 
     // --- Limiter for public connector ---
-    if (session.type === 'public' && (req.path.includes('api-proxy') || req.path.includes('genai'))) {
-        const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        const ipLimiter = publicGroup.key(clientIp);
-        try {
-            await ipLimiter.schedule(() => Promise.resolve());
-            const remaining = await ipLimiter.currentReservoir();
-            logger.debug(`IP: ${clientIp} | Quota Remaining: ${remaining}`);            
-        } catch (err) {
-            logger.warn('Rate limit triggered for IP %s', clientIp);
-            return res.status(429).json({
-                error: 'Too many requests',
-                detail: 'Public session rate limit exceeded.'
-            });
+    if (session.type === 'public') {
+        const isApi   = req.path.includes('api-proxy');
+        const isGenai = req.path.includes('genai');
+        if (isApi || isGenai) {
+            const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+            const group = isGenai ? publicGenaiGroup : publicApiGroup;
+            const ipLimiter = group.key(clientIp);
+            try {
+                await ipLimiter.schedule(() => Promise.resolve());
+                const remaining = await ipLimiter.currentReservoir();
+                logger.debug(`IP: ${clientIp} | ${isGenai ? 'GenAI' : 'API'} quota remaining: ${remaining}`);
+            } catch (err) {
+                logger.warn('Rate limit triggered for IP %s on %s', clientIp, req.path);
+                return res.status(429).json({
+                    error: 'Too many requests',
+                    detail: `Public session ${isGenai ? 'GenAI' : 'API'} rate limit exceeded.`
+                });
+            }
         }
     }
     // ---------------------------------
@@ -347,7 +363,10 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
             headers: fetchOptions.headers,
             hasBody: !!fetchOptions.body
         }));
-        const response = await fetch(finalUrl, fetchOptions);
+        const abortController = new AbortController();
+        const abortTimer = setTimeout(() => abortController.abort(), 20000);
+        fetchOptions.signal = abortController.signal;
+        const response = await fetch(finalUrl, fetchOptions).finally(() => clearTimeout(abortTimer));
         res.status(response.status);
 
         const forbiddenResponseHeaders = [

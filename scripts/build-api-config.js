@@ -745,7 +745,7 @@ The Sirene API provides access to the French National Register of Businesses and
         topic: "Enterprise Data (France)",
         name: "Recherche Entreprises",
         id: "recherche-entreprises",
-        waitMs: 100,
+        waitMs: 500,
         baseUrl: "https://recherche-entreprises.api.gouv.fr",
         description: "Official French aggregator (Sirene + RNE + Labels). Best for search companies and company leader names.",
         prompt: `Use \`https://recherche-entreprises.api.gouv.fr/search?q={query}\` for a textual search without location constraints. \`lat\` and \`long\` parameters are *not* allowed for this endpoint.
