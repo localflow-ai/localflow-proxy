@@ -568,14 +568,20 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
             return res.status(400).json({ error: "Missing encrypted API key" });
         }
 
-        const sessionInfo = req.session.connector.sessionInfo;
-        if (!sessionInfo.orgId) {
-            return res.status(400).json({ error: 'Invalid session' });
+        // Admin sessions send the key in plain text (no orgId encryption round-trip needed)
+        let apiKey;
+        if (req.session.type === 'admin') {
+            apiKey = encryptedApiKey;
+            logger.info('Admin session — using API key as plain text');
+        } else {
+            const sessionInfo = req.session.connector.sessionInfo;
+            if (!sessionInfo.orgId) {
+                return res.status(400).json({ error: 'Invalid session' });
+            }
+            logger.info('Encrypted: %s', encryptedApiKey);
+            logger.info('OrgId: %s', sessionInfo.orgId);
+            apiKey = decrypt(encryptedApiKey, sessionInfo.orgId);
         }
-        logger.info('Encrypted: %s', encryptedApiKey);
-        logger.info('OrgId: %s', sessionInfo.orgId);
-        // 1. Decrypt the user's key
-        const apiKey = decrypt(encryptedApiKey, sessionInfo.orgId);
 
         logger.info('Decrypted API key: %s', apiKey.replace(/.(?=.{4})/g, '*'));
 
