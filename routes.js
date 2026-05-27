@@ -834,10 +834,8 @@ router.get('/admin/stats', async (req, res) => {
         sessions: { total: sessionStats.total, active: sessionStats.active, byType: sessionStats.byType },
         events: { total: eventRing.length, byKind: eventCounts },
         rateLimit: {
-            apiTotal: 5000,
-            apiRemaining: Math.max(0, 5000 - dailyStats.apiCalls),
-            genaiTotal: 40,
-            genaiRemaining: Math.max(0, 40 - dailyStats.genaiCalls),
+            publicApi:   { callsToday: dailyStats.apiCalls,   limitPerIpPerDay: 5000 },
+            publicGenai: { callsToday: dailyStats.genaiCalls, limitPerIpPerDay: 40   },
         },
     });
 });
