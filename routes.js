@@ -2,9 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const router = express.Router();
 
-const { createSession, getSession } = require('./sessionManager.js');
+const { createSession, getSession, deleteSession, getSessionStats, getAllSessions } = require('./sessionManager.js');
 const { SalesforceConnector } = require('./connectors/salesforce.js');
 const { OdooConnector } = require('./connectors/odoo.js');
 const { PublicConnector } = require('./connectors/public.js');
@@ -21,6 +22,33 @@ const DESCRIPTORS_FILE = process.env.API_CONFIG_FILE || path.join(__dirname, 'ap
 let apiDescriptors = [];
 let lastLoadTime = 0;
 const nextAllowedTimes = new Map();
+
+// Admin
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+const startTime = Date.now();
+
+// Event ring buffer — last 500 events, all types
+const EVENT_RING_SIZE = 500;
+const eventRing = [];
+let eventIdCounter = 0;
+
+function pushEvent(kind, data) {
+    const event = { id: ++eventIdCounter, time: new Date().toISOString(), kind, ...data };
+    eventRing.push(event);
+    if (eventRing.length > EVENT_RING_SIZE) eventRing.shift();
+    return event;
+}
+
+// Daily aggregate call counters (proxy-wide, not per-IP)
+let dailyStats = { apiCalls: 0, genaiCalls: 0, date: new Date().toDateString() };
+
+function bumpDailyStat(key) {
+    const today = new Date().toDateString();
+    if (today !== dailyStats.date) {
+        dailyStats = { apiCalls: 0, genaiCalls: 0, date: today };
+    }
+    dailyStats[key]++;
+}
 
 function loadApiDescriptors() {
     logger.debug('Loading API descriptors from %s', DESCRIPTORS_FILE);
@@ -40,6 +68,18 @@ function loadApiDescriptors() {
         logger.error('Failed to load API descriptors: %s', err.message);
     }
     return apiDescriptors;
+}
+
+function saveApiDescriptors(descriptors) {
+    try {
+        fs.writeFileSync(DESCRIPTORS_FILE, JSON.stringify(descriptors, null, 2), 'utf8');
+        apiDescriptors = descriptors;
+        lastLoadTime = Date.now();
+        logger.info('Saved API descriptors to %s', DESCRIPTORS_FILE);
+    } catch (err) {
+        logger.error('Failed to save API descriptors: %s', err.message);
+        throw err;
+    }
 }
 
 /**
@@ -136,6 +176,23 @@ publicGenaiGroup.on('failed', (error, jobInfo) => {
     logger.warn('GenAI rate limit hit for IP: %s', jobInfo.options.id);
 });
 
+// Admin session — unauthenticated; must be before the auth middleware
+router.post('/admin/session', express.json(), (req, res) => {
+    if (!ADMIN_TOKEN) {
+        return res.status(503).json({ error: 'Admin access not configured. Set ADMIN_TOKEN env var.' });
+    }
+    const { token } = req.body;
+    if (!token || token !== ADMIN_TOKEN) {
+        return res.status(401).json({ error: 'Invalid admin token' });
+    }
+    const adminConnector = {
+        sessionInfo: { orgId: 'admin', userId: 'admin', username: 'admin' },
+        getSessionInfo: async () => ({ orgId: 'admin', userId: 'admin', username: 'admin' }),
+    };
+    const sessionToken = createSession('admin', adminConnector);
+    res.json({ token: sessionToken });
+});
+
 router.post('/session', express.json(), asyncHandler(async (req, res) => {
     const { type, config } = req.body;
     logger.info('create new session', type);
@@ -147,6 +204,7 @@ router.post('/session', express.json(), asyncHandler(async (req, res) => {
         await connector.login(config);
 
         const token = createSession(type, connector);
+        pushEvent('session', { ip: req.ip, sessionType: type });
         res.json({ token });
     } catch (err) {
         res.status(401).json({ error: 'Authentication failed', detail: err.message });
@@ -230,6 +288,15 @@ router.use(async (req, res, next) => {
     req.session = session;
     next();
 });
+
+const adminOnly = (req, res, next) => {
+    if (req.session?.type !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+};
+
+router.use('/admin', adminOnly);
 
 /**
  * API Proxy Endpoint
@@ -330,8 +397,6 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
 
     delete requestHeaders['host'];
 
-    console.log("FINAL OUTBOUND HEADERS:", requestHeaders);
-
     const fetchOptions = {
         method: req.method,
         headers: requestHeaders,
@@ -369,6 +434,10 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         const response = await fetch(finalUrl, fetchOptions).finally(() => clearTimeout(abortTimer));
         res.status(response.status);
 
+        const clientIpProxy = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        pushEvent('api-proxy', { ip: clientIpProxy, url: targetUrl, apiName: dataSource?.name ?? null, status: response.status });
+        bumpDailyStat('apiCalls');
+
         const forbiddenResponseHeaders = [
             'access-control-allow-origin',
             'access-control-allow-credentials',
@@ -401,6 +470,9 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
 
     } catch (err) {
         logger.error('Proxy Error: %s', err.message);
+        const clientIpProxyErr = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        pushEvent('api-proxy', { ip: clientIpProxyErr, url: targetUrl, apiName: dataSource?.name ?? null, status: 502 });
+        bumpDailyStat('apiCalls');
         res.status(502).json({ error: 'Bad Gateway', message: err.message });
     }
 }));
@@ -524,9 +596,12 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
         }
 
         // 3. Return the exact response from Gemini
+        const clientIpGenai = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        pushEvent('genai', { ip: clientIpGenai, model: modelId, status: response.status });
+        bumpDailyStat('genaiCalls');
         res.status(response.status).json(data);
     } catch (err) {
-        console.error("Proxy Error:", err);
+        logger.error('Proxy Error: %s', err.message);
         res.status(500).json({ error: "Internal Server Error", details: err.message });
     }
 }));
@@ -636,10 +711,13 @@ router.post('/common/extract-pdf', throttler,
     }
 
     // 4. Enhanced Response with Metadata
+    const returnedPages = (finalContent.match(/## Page/g) || []).length;
+    const clientIpPdf = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    pushEvent('pdf', { ip: clientIpPdf, pages: returnedPages });
     res.json({
         success: true,
         metadata: pdfMeta,
-        returnedPages: (finalContent.match(/## Page/g) || []).length,
+        returnedPages,
         content: finalContent.trim() || "No matches found for the given search criteria."
     });
 }));
@@ -735,6 +813,68 @@ router.post('/api/send-email', asyncHandler(async (req, res) => {
     const result = await req.session.connector.sendEmail({ toAddresses, subject, body, from });
     res.json({ success: true, result });
 }));
+
+// ─── Admin routes (all require admin session via router.use('/admin', adminOnly) above) ───
+
+router.get('/admin/events', (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+    const kind = req.query.kind;
+    let events = kind ? eventRing.filter(e => e.kind === kind) : eventRing;
+    res.json(events.slice(-limit).reverse());
+});
+
+router.get('/admin/stats', async (req, res) => {
+    const sessionStats = getSessionStats();
+    const eventCounts = {};
+    for (const e of eventRing) {
+        eventCounts[e.kind] = (eventCounts[e.kind] || 0) + 1;
+    }
+    res.json({
+        uptime: Math.floor((Date.now() - startTime) / 1000),
+        sessions: { total: sessionStats.total, active: sessionStats.active, byType: sessionStats.byType },
+        events: { total: eventRing.length, byKind: eventCounts },
+        rateLimit: {
+            apiTotal: 5000,
+            apiRemaining: Math.max(0, 5000 - dailyStats.apiCalls),
+            genaiTotal: 40,
+            genaiRemaining: Math.max(0, 40 - dailyStats.genaiCalls),
+        },
+    });
+});
+
+router.get('/admin/sessions', (req, res) => {
+    res.json(getAllSessions());
+});
+
+router.get('/admin/api-config', (req, res) => {
+    res.json(loadApiDescriptors());
+});
+
+router.post('/admin/api-config', (req, res) => {
+    const descriptors = loadApiDescriptors();
+    const newConfig = { ...req.body, id: req.body.id || crypto.randomUUID() };
+    descriptors.push(newConfig);
+    saveApiDescriptors(descriptors);
+    res.status(201).json(newConfig);
+});
+
+router.put('/admin/api-config/:id', (req, res) => {
+    const descriptors = loadApiDescriptors();
+    const idx = descriptors.findIndex(d => d.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    descriptors[idx] = { ...descriptors[idx], ...req.body, id: req.params.id };
+    saveApiDescriptors(descriptors);
+    res.json(descriptors[idx]);
+});
+
+router.delete('/admin/api-config/:id', (req, res) => {
+    const descriptors = loadApiDescriptors();
+    const idx = descriptors.findIndex(d => d.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    descriptors.splice(idx, 1);
+    saveApiDescriptors(descriptors);
+    res.status(204).end();
+});
 
 router.use((err, req, res, next) => {
     console.error('[daquota proxy] internal error', err);

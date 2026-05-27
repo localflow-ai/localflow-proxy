@@ -94,8 +94,38 @@ global[intervalKey] = setInterval(() => {
     }
 }, CLEANUP_INTERVAL);
 
+function getSessionStats() {
+    const now = Date.now();
+    let active = 0;
+    const byType = {};
+    for (const session of sessions.values()) {
+        const isActive = !session.lastAccess || (now - session.lastAccess < SESSION_TTL);
+        if (isActive) active++;
+        byType[session.type] = (byType[session.type] || 0) + 1;
+    }
+    return { total: sessions.size, active, byType };
+}
+
+function getAllSessions() {
+    const result = [];
+    for (const [token, session] of sessions.entries()) {
+        const si = session.connector?.sessionInfo ?? {};
+        result.push({
+            token: token.slice(0, 8) + '...',
+            type: session.type,
+            userId: si.userId ?? si.username ?? null,
+            orgId: si.orgId ?? null,
+            createdAt: new Date(session.createdAt).toISOString(),
+            lastAccess: session.lastAccess ? new Date(session.lastAccess).toISOString() : null,
+        });
+    }
+    return result;
+}
+
 module.exports = {
     createSession,
     getSession,
-    deleteSession
+    deleteSession,
+    getSessionStats,
+    getAllSessions,
 };
