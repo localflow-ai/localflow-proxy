@@ -68,9 +68,12 @@ All secrets — LLM keys, CRM credentials, master encryption key — live exclus
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+ (ARM-native build on Apple Silicon — install via nvm: `nvm install 20`)
 - npm 9+
-- Python 3 with `pdfplumber` installed (`pip install pdfplumber`) — required for PDF extraction
+- Python 3 with `pdfplumber` installed — required for PDF extraction:
+  ```bash
+  pip3 install pdfplumber
+  ```
 - A 32-byte (256-bit) master encryption key
 
 ### 1. Clone and install
