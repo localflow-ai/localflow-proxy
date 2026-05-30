@@ -1,7 +1,7 @@
 {
   "name": "daquota-proxy",
   "version": "1.0.0",
-  "description": "",
+  "description": "Network gateway for metadata-first AI applications \u2014 handles LLM bridging, API governance, session management, and data flow monitoring",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
