@@ -2,18 +2,18 @@
 
 > **Apache 2.0 License** — See [LICENSE](#license) at the bottom of this file.
 
-The LocalFlow Proxy is the mandatory network gateway for [local-first AI](https://github.com/localflow-ai/localflow-core) applications. When a local-first AI formula executes in the browser sandbox, all interactions with the outside world are channelled exclusively through this proxy — no direct outbound calls are possible from the sandbox. This makes the proxy the single point of control ensuring that sensitive data from your business systems never leaves your network without explicit authorization.
+The LocalFlow Proxy is the mandatory network gateway for [metadata-first AI](https://github.com/localflow-ai/localflow-core) applications. When a metadata-first AI formula executes in the browser sandbox, all interactions with the outside world are channelled exclusively through this proxy — no direct outbound calls are possible from the sandbox. This makes the proxy the single point of control ensuring that sensitive data from your business systems never leaves your network without explicit authorization.
 
 It serves five key purposes:
 
 - **Security and session management** — authenticate users against your business systems (CRM, ERP, or public sessions), manage session tokens and their lifecycle, and handle API-key encryption so that secrets are never exposed to the browser
-- **API governance** — define and administer which external APIs the local-first AI execution environment may call; supports BYOK (bring your own key), per-source throttling, URL whitelisting, and OAuth 2.0 token exchange
+- **API governance** — define and administer which external APIs the metadata-first AI execution environment may call; supports BYOK (bring your own key), per-source throttling, URL whitelisting, and OAuth 2.0 token exchange
 - **Server-side edge services** — offload tasks that benefit from server-side execution, such as PDF text extraction and OCR; these services deliver higher quality results than in-browser alternatives and keep heavy computation off the client
 - **LLM bridge** — relay formula-generation requests to the LLM (currently Gemini, pluggable), decrypting the user's API key at request time so it is never transmitted in plaintext
-- **Data flow monitoring** — track and audit what data enters and leaves the local-first AI sandbox, giving operators visibility over the information boundary between the browser and external services
+- **Data flow monitoring** — track and audit what data enters and leaves the metadata-first AI sandbox, giving operators visibility over the information boundary between the browser and external services
 
 **Related repositories:**
-- [localflow-core](https://github.com/localflow-ai/localflow-core) — the client-side local-first AI library
+- [localflow-core](https://github.com/localflow-ai/localflow-core) — the client-side metadata-first AI library
 - [localflow-app](https://github.com/localflow-ai/localflow-app) — the LocalFlow application
 
 ---
@@ -34,7 +34,7 @@ It serves five key purposes:
 ## Architecture
 
 ```
-Browser (local-first AI app)
+Browser (metadata-first AI app)
         │
         │  HTTPS — session token in Authorization header
         ▼
