@@ -14,7 +14,7 @@ It serves five key purposes:
 
 **Related repositories:**
 - [localflow-core](https://github.com/localflow-ai/localflow-core) — the client-side metadata-first AI library
-- [localflow-app](https://github.com/localflow-ai/localflow-app) — the LocalFlow application
+- [localflow-examples](https://github.com/localflow-ai/localflow-examples) — React and vanilla JS examples
 
 ---
 
