@@ -2,15 +2,15 @@
 
 > **Apache 2.0 License** — See [LICENSE](#license) at the bottom of this file.
 
-The LocalFlow Proxy is the mandatory network gateway for [metadata-first AI](https://github.com/localflow-ai/localflow-core) applications. When a metadata-first AI formula executes in the browser sandbox, all interactions with the outside world are channelled exclusively through this proxy — no direct outbound calls are possible from the sandbox. This makes the proxy the single point of control ensuring that sensitive data from your business systems never leaves your network without explicit authorization.
+The LocalFlow Proxy is the server-side companion to [localflow-core](https://github.com/localflow-ai/localflow-core). The core library works standalone — you can build a metadata-first AI app with just a browser and a Gemini API key, no proxy required. The proxy unlocks the enterprise tier: CRM/ERP connections, governed external API access, server-side edge services, and full data-flow auditability. In that context it becomes the single point of control ensuring sensitive data from your business systems never leaves your network without explicit authorization.
 
 It serves five key purposes:
 
-- **Security and session management** — authenticate users against your business systems (CRM, ERP, or public sessions), manage session tokens and their lifecycle, and handle API-key encryption so that secrets are never exposed to the browser
-- **API governance** — define and administer which external APIs the metadata-first AI execution environment may call; supports BYOK (bring your own key), per-source throttling, URL whitelisting, and OAuth 2.0 token exchange
-- **Server-side edge services** — offload tasks that benefit from server-side execution, such as PDF text extraction and OCR; these services deliver higher quality results than in-browser alternatives and keep heavy computation off the client
-- **LLM bridge** — relay formula-generation requests to the LLM (currently Gemini, pluggable), decrypting the user's API key at request time so it is never transmitted in plaintext
-- **Data flow monitoring** — track and audit what data enters and leaves the metadata-first AI sandbox, giving operators visibility over the information boundary between the browser and external services
+- **CRM / ERP connectors** — authenticate users against Odoo, Salesforce, or any custom backend; manage session tokens and their lifecycle
+- **API governance** — define which external APIs AI formulas may call; supports BYOK (bring your own key), per-source throttling, URL whitelisting, and OAuth 2.0 token exchange
+- **Server-side edge services** — PDF text extraction, OCR, and other tasks that benefit from server-side execution; delivers higher quality than in-browser alternatives and keeps heavy computation off the client
+- **LLM bridge** — relay LLM requests through the proxy so API keys are decrypted server-side and never exposed in the browser; required when keys must not leave your network
+- **Data flow monitoring** — track and audit what data enters and leaves the AI sandbox, giving operators visibility over the information boundary between the browser and external services
 
 **Related repositories:**
 - [localflow-core](https://github.com/localflow-ai/localflow-core) — the client-side metadata-first AI library
