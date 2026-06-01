@@ -94,11 +94,16 @@ Keep this value secret. All encrypted data (LLM keys, BYOK API keys) is derived 
 
 ### 3. Configure the environment
 
-Create a `.env` file in the project root (see [Configuration](#configuration) for all options):
+Create a `.env` file in the project root for shared/committed settings and a `.env.local` file for secrets that should never be committed. `.env.local` is loaded last and overrides any value in `.env`.
+
+Minimal `.env.local`:
 
 ```env
 MASTER_ENCRYPTION_KEY=your_64_character_hex_string_here
+ADMIN_TOKEN=your_secret_admin_token_here
 ```
+
+See [Configuration](#configuration) for all options.
 
 ### 4. Run
 
@@ -127,9 +132,12 @@ pkill -f "node index.js"   # stop any running instance
 
 ### Environment variables
 
+The proxy loads `.env` first, then `.env.local` (which overrides any duplicate keys). Both files are optional but at minimum `MASTER_ENCRYPTION_KEY` must be set. Add `.env.local` to `.gitignore` to keep secrets out of version control.
+
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `MASTER_ENCRYPTION_KEY` | **Yes** | 64-character hex string (32 bytes). Used to derive per-org AES-256-GCM encryption keys. Generate with `openssl rand -hex 32`. |
+| `ADMIN_TOKEN` | No | Secret token that enables the `POST /admin/session` endpoint. When set, a client can authenticate as an admin by sending `Authorization: Bearer <ADMIN_TOKEN>` to that endpoint and receives a session token with full admin privileges. If unset, the endpoint returns `503`. |
 | `API_CONFIG_FILE` | No | Path to the API descriptors JSON file. Defaults to `./api-config.json`. The file is hot-reloaded whenever it changes on disk. |
 
 ### API descriptor file (`api-config.json`)
