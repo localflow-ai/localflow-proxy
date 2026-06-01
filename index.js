@@ -5,7 +5,8 @@ const routes = require('./routes.js');
 const { getLogger } = require('./logging');
 const logger = getLogger('index');
 
-//dotenv.config();
+require('dotenv').config();                          // load .env
+require('dotenv').config({ path: '.env.local', override: true }); // .env.local takes precedence
 const app = express();
 app.set('trust proxy', true);
 app.use(cors({
