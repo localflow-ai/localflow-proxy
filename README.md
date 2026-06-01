@@ -108,23 +108,18 @@ See [Configuration](#configuration) for all options.
 ### 4. Run
 
 ```bash
-# Development (auto-restart on file change)
+# Development — auto-restarts on file change, stop with Ctrl+C
 npm run dev
 
-# Production
-npm start
+# Production — managed by PM2 (survives terminal close, auto-restarts on crash)
+npm run prod:start    # start
+npm run prod:stop     # stop
+npm run prod:restart  # restart
+npm run prod:logs     # tail logs
+npm run prod:status   # show process status
 ```
 
 The server starts on `http://localhost:3000`.
-
-### Production deployment
-
-The included `start-proxy.sh` script starts the server with `nohup` and redirects output to `proxy.log`:
-
-```bash
-pkill -f "node index.js"   # stop any running instance
-./start-proxy.sh
-```
 
 ---
 
