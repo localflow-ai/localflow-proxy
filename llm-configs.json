@@ -1,0 +1,32 @@
+[
+  {
+    "id": "gemini-flash",
+    "displayName": "Gemini 3 Flash",
+    "protocol": "gemini",
+    "model": "gemini-3-flash-preview",
+    "apiKey": "",
+    "isDefault": true
+  },
+  {
+    "id": "mimo-flash",
+    "displayName": "MiMo V2 Flash",
+    "protocol": "openai",
+    "model": "mimo-v2-flash",
+    "baseUrl": "https://api.xiaomimimo.com",
+    "apiKey": ""
+  },
+  {
+    "id": "gpt-4o",
+    "displayName": "GPT-4o",
+    "protocol": "openai",
+    "model": "gpt-4o",
+    "apiKey": ""
+  },
+  {
+    "id": "claude-sonnet",
+    "displayName": "Claude Sonnet 4.6",
+    "protocol": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "apiKey": ""
+  }
+]
