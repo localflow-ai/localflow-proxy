@@ -558,53 +558,167 @@ router.post('/common/decrypt', (req, res) => {
     res.json({ decrypted });
 });
 
+// ---------------------------------------------------------------------------
+// LLM configs — admin-managed, keys/baseUrls never sent to clients
+// ---------------------------------------------------------------------------
+
+const LLM_CONFIGS_FILE = path.join(__dirname, 'llm-configs.json');
+let llmConfigs = [];
+let llmConfigsLoadTime = 0;
+
+function loadLlmConfigs() {
+    try {
+        if (!fs.existsSync(LLM_CONFIGS_FILE)) return [];
+        const stats = fs.statSync(LLM_CONFIGS_FILE);
+        if (stats.mtimeMs > llmConfigsLoadTime) {
+            llmConfigs = JSON.parse(fs.readFileSync(LLM_CONFIGS_FILE, 'utf8'));
+            llmConfigsLoadTime = stats.mtimeMs;
+            logger.info('Loaded LLM configs from %s', LLM_CONFIGS_FILE);
+        }
+    } catch (err) {
+        logger.error('Failed to load LLM configs: %s', err.message);
+    }
+    return llmConfigs;
+}
+
+router.get('/common/llm-configs', asyncHandler(async (req, res) => {
+    const configs = loadLlmConfigs();
+    const safe = configs.map(({ id, displayName, protocol, model, isDefault }) =>
+        ({ id, displayName, protocol, model, isDefault }));
+    res.json(safe);
+}));
+
+// ---------------------------------------------------------------------------
+// LLM proxy — routes to Gemini / OpenAI / Anthropic based on protocol
+// ---------------------------------------------------------------------------
+
 router.post('/common/genai', asyncHandler(async (req, res) => {
     try {
-        const { encryptedApiKey, model, ...geminiPayload } = req.body;
-
-        logger.info('Received Gemini proxy request for model %s', model || 'gemini-3-flash-preview');
-
-        if (!encryptedApiKey) {
-            return res.status(400).json({ error: "Missing encrypted API key" });
-        }
-
+        const request = req.body;
         const sessionInfo = req.session.connector.sessionInfo;
         if (!sessionInfo.orgId) {
             return res.status(400).json({ error: 'Invalid session' });
         }
-        logger.info('Encrypted: %s', encryptedApiKey);
-        logger.info('OrgId: %s', sessionInfo.orgId);
-        // Decrypt the user's key (admin sessions use orgId='admin' as the salt)
-        const apiKey = decrypt(encryptedApiKey, sessionInfo.orgId);
 
-        logger.info('Decrypted API key: %s', apiKey.replace(/.(?=.{4})/g, '*'));
+        let protocol, model, apiKey, baseUrl;
 
-        const modelId = model || 'gemini-3-flash-preview';
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+        if (!request.modelId) return res.status(400).json({ error: 'Missing modelId' });
 
-        // 2. Forward to Gemini using your fetch wrapper
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(geminiPayload)
-        });
+        const configs = loadLlmConfigs();
+        const cfg = configs.find(c => c.id === request.modelId);
+        if (!cfg) return res.status(400).json({ error: `Unknown modelId: ${request.modelId}` });
 
-        const data = await response.json();
+        protocol = cfg.protocol;
+        model = cfg.model;
+        baseUrl = cfg.baseUrl;
+        // User BYOK key takes precedence over the server-configured key
+        apiKey = request.apiKey ? decrypt(request.apiKey, sessionInfo.orgId) : cfg.apiKey;
+        if (!apiKey) return res.status(400).json({ error: `No API key configured for model: ${request.modelId}` });
 
-        if (!response.ok) {
-            logger.error('Gemini API error: %s', JSON.stringify(data));
+        logger.info('LLM proxy request protocol=%s model=%s', protocol, model);
+
+        let llmResponse;
+        if (protocol === 'gemini') {
+            llmResponse = await _proxyGemini(request, model, apiKey);
+        } else if (protocol === 'openai') {
+            llmResponse = await _proxyOpenAI(request, model, apiKey, baseUrl);
+        } else if (protocol === 'anthropic') {
+            llmResponse = await _proxyAnthropic(request, model, apiKey, baseUrl);
+        } else {
+            return res.status(400).json({ error: `Unknown protocol: ${protocol}` });
         }
 
-        // 3. Return the exact response from Gemini
-        const clientIpGenai = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        pushEvent('genai', { ip: clientIpGenai, model: modelId, status: response.status });
+        const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        pushEvent('genai', { ip: clientIp, model, status: 200 });
         bumpDailyStat('genaiCalls');
-        res.status(response.status).json(data);
+        res.json(llmResponse);
     } catch (err) {
-        logger.error('Proxy Error: %s', err.message);
-        res.status(500).json({ error: "Internal Server Error", details: err.message });
+        logger.error('LLM Proxy Error: %s', err.message);
+        res.status(500).json({ error: err.message });
     }
 }));
+
+async function _proxyGemini(request, model, apiKey) {
+    const modelId = model || 'gemini-3-flash-preview';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+    const body = {
+        system_instruction: { parts: [{ text: request.system }] },
+        contents: request.messages.map(m => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }],
+        })),
+        generation_config: {
+            temperature: request.options?.temperature ?? 0.5,
+            ...(request.options?.thinking ? { thinking_config: { thinking_level: 'high', include_thoughts: true } } : {}),
+            ...(request.options?.json    ? { response_mime_type: 'application/json' } : {}),
+        },
+    };
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Gemini [${res.status}]: ${err.error?.message ?? res.statusText}`);
+    }
+    const data = await res.json();
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    return {
+        text:    parts.filter(p => !p.thought && p.text).map(p => p.text).join(''),
+        thoughts: parts.filter(p =>  p.thought && p.text).map(p => p.text).join('') || undefined,
+    };
+}
+
+async function _proxyOpenAI(request, model, apiKey, baseUrl) {
+    const base = baseUrl || 'https://api.openai.com';
+    const body = {
+        model: model || 'gpt-4o',
+        messages: [
+            { role: 'system', content: request.system },
+            ...request.messages,
+        ],
+        temperature: request.options?.temperature ?? 0.5,
+    };
+    if (request.options?.json)    body.response_format = { type: 'json_object' };
+    if (request.options?.thinking) body.thinking = { type: 'enabled' };
+    const res = await fetch(`${base}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`OpenAI [${res.status}]: ${err.error?.message ?? res.statusText}`);
+    }
+    const data = await res.json();
+    const msg = data.choices?.[0]?.message;
+    return { text: msg?.content ?? '', thoughts: msg?.reasoning_content || undefined };
+}
+
+async function _proxyAnthropic(request, model, apiKey, baseUrl) {
+    const base = baseUrl || 'https://api.anthropic.com';
+    const thinking = request.options?.thinking ?? false;
+    const body = {
+        model: model || 'claude-opus-4-5',
+        system: request.system,
+        messages: request.messages,
+        max_tokens: thinking ? 16000 : 8192,
+        temperature: thinking ? 1 : (request.options?.temperature ?? 0.5),
+    };
+    if (thinking) body.thinking = { type: 'enabled', budget_tokens: 10000 };
+    const res = await fetch(`${base}/v1/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Anthropic [${res.status}]: ${err.error?.message ?? res.statusText}`);
+    }
+    const data = await res.json();
+    const blocks = data.content ?? [];
+    return {
+        text:    blocks.filter(b => b.type === 'text').map(b => b.text ?? '').join(''),
+        thoughts: blocks.filter(b => b.type === 'thinking').map(b => b.thinking ?? '').join('') || undefined,
+    };
+}
 
 const normalizeForFuzzy = (str) => {
     if (!str) return "";
