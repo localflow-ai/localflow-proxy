@@ -253,6 +253,16 @@ router.post('/external-signup', express.json(), asyncHandler(async (req, res) =>
     }
 }));
 
+router.get('/public/config', (req, res) => {
+    const cfg = loadProxyConfig();
+    res.json({
+        publicSessions: {
+            enabled: cfg.allPublicSessions !== false,
+            rateLimits: cfg.publicSessionLimiterConfiguration ?? { genaiPerIpPerDay: 40, apiPerIpPerDay: 5000 },
+        },
+    });
+});
+
 router.use(async (req, res, next) => {
     if (req.method === 'OPTIONS') {
         return next();
