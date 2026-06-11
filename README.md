@@ -53,12 +53,15 @@ All secrets — LLM keys, CRM credentials, master encryption key — live exclus
 
 ### Technical highlights
 
-- Token-based sessions with 24 h sliding TTL and up to 1 000 concurrent sessions
+- Token-based sessions with configurable sliding TTL (default 24 h) and up to 1 000 concurrent sessions
 - AES-256-GCM encryption with per-org key derivation from a single master key
+- Multi-LLM bridge: Gemini, OpenAI (and compatible), Anthropic — protocol resolved server-side by `modelId`
+- Per-session-type built-in key scoping in `llm-configs.json` (e.g. demo key for public sessions only)
+- Hot-reloadable configuration: `config.json`, `llm-configs.json`, `api-config.json` — all reload on file change with no restart
 - API-key injection via query param, header, request body, or route placeholder
 - OAuth 2.0 client-credentials token exchange for third-party APIs
 - URL rewrite rules applied before forwarding
-- Per-source throttling and per-IP rate limiting on public sessions (Bottleneck)
+- Per-source throttling and per-IP rate limiting on public sessions (Bottleneck), configurable via `config.json`
 - Layout-preserving PDF extraction via Python/pdfplumber with keyword-based page filtering
 - Session-scoped bidirectional field and object-type aliases (connector field mapping)
 
@@ -119,7 +122,7 @@ npm run prod:logs     # tail logs
 npm run prod:status   # show process status
 ```
 
-The server starts on `http://localhost:3000`.
+The server starts on `http://localhost:3000` by default. Override with `PORT=3001` in `.env.local`.
 
 ---
 
@@ -134,6 +137,84 @@ The proxy loads `.env` first, then `.env.local` (which overrides any duplicate k
 | `MASTER_ENCRYPTION_KEY` | **Yes** | 64-character hex string (32 bytes). Used to derive per-org AES-256-GCM encryption keys. Generate with `openssl rand -hex 32`. |
 | `ADMIN_TOKEN` | No | Secret token that enables the `POST /admin/session` endpoint. When set, a client can authenticate as an admin by sending `Authorization: Bearer <ADMIN_TOKEN>` to that endpoint and receives a session token with full admin privileges. If unset, the endpoint returns `503`. |
 | `API_CONFIG_FILE` | No | Path to the API descriptors JSON file. Defaults to `./api-config.json`. The file is hot-reloaded whenever it changes on disk. |
+| `PORT` | No | HTTP port. Defaults to `3000`. |
+
+### Proxy config file (`config.json`)
+
+`config.json` controls runtime behaviour of the proxy. It is hot-reloaded on every request when the file changes on disk — no restart required.
+
+```json
+{
+  "allowedOrigins": "*",
+  "sessionTtlMs": 86400000,
+  "allPublicSessions": true,
+  "publicSessionLimiterConfiguration": {
+    "genaiPerIpPerDay": 40,
+    "apiPerIpPerDay": 5000
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `allowedOrigins` | `"*"` | CORS allowed origins. `"*"` allows all. Use a string or array of strings to restrict. |
+| `sessionTtlMs` | `86400000` | Session idle timeout in milliseconds (default 24 h). |
+| `allPublicSessions` | `true` | Set to `false` to disable all unauthenticated (public) sessions without a restart. |
+| `publicSessionLimiterConfiguration.genaiPerIpPerDay` | `40` | Max AI (genai) requests per IP per day for public sessions. |
+| `publicSessionLimiterConfiguration.apiPerIpPerDay` | `5000` | Max API proxy requests per IP per day for public sessions. |
+
+### LLM config file (`llm-configs.json`)
+
+`llm-configs.json` defines the available LLM models. It is also hot-reloaded on change.
+
+```json
+[
+  {
+    "id": "gemini-flash",
+    "displayName": "Gemini 3 Flash",
+    "protocol": "gemini",
+    "model": "gemini-3-flash-preview",
+    "apiKey": { "public": "AIza..." },
+    "isDefault": true
+  },
+  {
+    "id": "gpt-4o",
+    "displayName": "GPT-4o",
+    "protocol": "openai",
+    "model": "gpt-4o",
+    "apiKey": ""
+  },
+  {
+    "id": "claude-sonnet",
+    "displayName": "Claude Sonnet 4.6",
+    "protocol": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "apiKey": ""
+  }
+]
+```
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique identifier used by clients as `modelId`. |
+| `displayName` | Label shown in the UI. |
+| `protocol` | `"gemini"`, `"openai"`, or `"anthropic"`. |
+| `model` | Provider model name forwarded in the API call. |
+| `baseUrl` | (OpenAI-compatible only) Override the API base URL, e.g. for MIMO or other compatible providers. |
+| `apiKey` | Server-side key. String form (`"key"`) applies to all sessions. Object form enables per-session-type control (see below). |
+| `isDefault` | If `true`, clients use this model when none is specified. |
+
+**Per-session-type key scoping (`apiKey` object form):**
+
+| Form | Meaning |
+|------|---------|
+| `"AIza..."` | Built-in key available to all session types (legacy / shorthand) |
+| `{ "*": "AIza..." }` | Same as string form — explicit wildcard |
+| `{ "public": "AIza..." }` | Built-in key only for public (anonymous) sessions; other sessions must BYOK |
+| `{ "!public": "AIza..." }` | Built-in key for all session types *except* public |
+| `""` or `{}` | No built-in key — all sessions must BYOK |
+
+BYOK (an encrypted key sent by the client) always takes precedence over the server-side key.
 
 ### API descriptor file (`api-config.json`)
 
@@ -172,7 +253,7 @@ Each descriptor is a JSON object with the following fields:
 
 ## API reference
 
-All endpoints (except `POST /session`) require a `Bearer <token>` in the `Authorization` header (or `X-Proxy-Token` for `/common/api-proxy`). Tokens are obtained from `POST /session`.
+Most endpoints require a `Bearer <token>` in the `Authorization` header (or `X-Proxy-Token` for `/common/api-proxy`). Tokens are obtained from `POST /session`. The endpoints `GET /public/config` and `POST /session` require no token.
 
 ### Authentication
 
@@ -228,19 +309,54 @@ These endpoints configure session-scoped aliases. The client can define its own 
 
 ### Common services
 
-#### `POST /common/genai`
+#### `GET /public/config`
 
-Forward a request to the Gemini API using the caller's encrypted API key.
+Returns public-facing proxy configuration — no token required. Intended for demo apps that display rate limit information before the user logs in.
 
 ```json
 {
-  "encryptedApiKey": "<proxy-encrypted key>",
-  "model": "gemini-3-flash-preview",
-  "contents": [ ... ]
+  "publicSessions": {
+    "enabled": true,
+    "rateLimits": { "genaiPerIpPerDay": 10, "apiPerIpPerDay": 5000 }
+  }
 }
 ```
 
-The proxy decrypts the key and forwards the rest of the payload verbatim to the Gemini API.
+---
+
+#### `GET /common/llm-configs`
+
+Returns the list of configured LLM models (API keys are never included).
+
+```json
+[
+  { "id": "gemini-flash", "displayName": "Gemini 3 Flash", "protocol": "gemini", "model": "gemini-3-flash-preview", "isDefault": true },
+  ...
+]
+```
+
+---
+
+#### `POST /common/genai`
+
+Forward a prompt to an LLM. The proxy resolves the model, protocol, and API key from `llm-configs.json` by `modelId`. BYOK (`apiKey`) takes precedence over the server-configured key.
+
+```json
+{
+  "modelId": "gemini-flash",
+  "system": "You are a helpful assistant.",
+  "messages": [{ "role": "user", "content": "Hello" }],
+  "apiKey": "<optional encrypted BYOK key>",
+  "options": { "temperature": 0.5, "thinking": false, "json": false }
+}
+```
+
+**Response:**
+```json
+{ "text": "...", "thoughts": "..." }
+```
+
+Supported protocols: `gemini`, `openai` (and OpenAI-compatible endpoints), `anthropic`.
 
 ---
 
@@ -306,6 +422,46 @@ Return the list of available external API descriptors (API keys masked as `"***"
 Return access tracking statistics for the current session user or org.
 
 Query params: `scope` (`"default"` or `"org"`), `resource`, `read` (`"true"/"false"`), `weight`.
+
+---
+
+### Admin endpoints
+
+All admin endpoints require an admin session token (obtained from `POST /admin/session` using `ADMIN_TOKEN`).
+
+#### `POST /admin/session`
+
+Authenticate as admin. Body: `{ "token": "<ADMIN_TOKEN>" }`. Returns `{ "token": "<session-token>" }`.
+
+---
+
+#### `GET /admin/config`
+
+Returns the current live proxy config (from `config.json`).
+
+---
+
+#### `GET /admin/stats`
+
+Returns uptime, session counts by type, event counts by kind, and current rate limit values.
+
+---
+
+#### `GET /admin/events`
+
+Returns the last N events from the ring buffer. Query params: `limit` (max 500), `kind` (filter by event type).
+
+---
+
+#### `GET /admin/sessions`
+
+Returns all active sessions (tokens truncated).
+
+---
+
+#### `GET /admin/api-config` / `POST /admin/api-config` / `DELETE /admin/api-config/:id`
+
+Read and manage the API descriptor list (`api-config.json`).
 
 ---
 
