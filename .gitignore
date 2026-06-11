@@ -7,3 +7,6 @@ dist
 package-lock.json
 .sfdx/
 pdf-samples/
+config.json
+llm-configs.json
+api-config.json
