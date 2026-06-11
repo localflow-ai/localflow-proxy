@@ -17,6 +17,7 @@ const Bottleneck = require("bottleneck");
 
 const { getLogger } = require('./logging');
 const logger = getLogger('routes');
+const { loadProxyConfig } = require('./config');
 
 const DESCRIPTORS_FILE = process.env.API_CONFIG_FILE || path.join(__dirname, 'api-config.json');
 let apiDescriptors = [];
@@ -147,34 +148,48 @@ const throttler = (req, res, next) => {
         });
 };
 
-// Public API proxy: 5000 calls/day per IP, serialized to respect per-datasource waitMs
-const publicApiGroup = new Bottleneck.Group({
-    reservoir: 5000,
-    reservoirRefreshAmount: 5000,
-    reservoirRefreshInterval: 60 * 60 * 1000 * 24,
-    maxConcurrent: 1,
-    highWater: 500,
-    strategy: Bottleneck.strategy.OVERFLOW,
-    rejectOnDrop: true
-});
+let publicApiGroup = null;
+let publicGenaiGroup = null;
+let _rateLimitGroupKey = null;
 
-// Public GenAI: 40 calls/day per IP
-const publicGenaiGroup = new Bottleneck.Group({
-    reservoir: 40,
-    reservoirRefreshAmount: 40,
-    reservoirRefreshInterval: 60 * 60 * 1000 * 24,
-    maxConcurrent: 1,
-    highWater: 10,
-    strategy: Bottleneck.strategy.OVERFLOW,
-    rejectOnDrop: true
-});
+function ensureRateLimitGroups() {
+    const cfg = loadProxyConfig();
+    const rl = cfg.publicSessionLimiterConfiguration ?? {};
+    const genaiLimit = rl.genaiPerIpPerDay ?? 40;
+    const apiLimit   = rl.apiPerIpPerDay   ?? 5000;
+    const key = `${genaiLimit}:${apiLimit}`;
+    if (key === _rateLimitGroupKey) return;
 
-publicApiGroup.on('failed', (error, jobInfo) => {
-    logger.warn('API rate limit hit for IP: %s', jobInfo.options.id);
-});
-publicGenaiGroup.on('failed', (error, jobInfo) => {
-    logger.warn('GenAI rate limit hit for IP: %s', jobInfo.options.id);
-});
+    if (publicApiGroup) publicApiGroup.disconnect();
+    if (publicGenaiGroup) publicGenaiGroup.disconnect();
+
+    publicApiGroup = new Bottleneck.Group({
+        reservoir: apiLimit,
+        reservoirRefreshAmount: apiLimit,
+        reservoirRefreshInterval: 60 * 60 * 1000 * 24,
+        maxConcurrent: 1,
+        highWater: 500,
+        strategy: Bottleneck.strategy.OVERFLOW,
+        rejectOnDrop: true,
+    });
+    publicGenaiGroup = new Bottleneck.Group({
+        reservoir: genaiLimit,
+        reservoirRefreshAmount: genaiLimit,
+        reservoirRefreshInterval: 60 * 60 * 1000 * 24,
+        maxConcurrent: 1,
+        highWater: 10,
+        strategy: Bottleneck.strategy.OVERFLOW,
+        rejectOnDrop: true,
+    });
+    publicApiGroup.on('failed', (error, jobInfo) => {
+        logger.warn('API rate limit hit for IP: %s', jobInfo.options.id);
+    });
+    publicGenaiGroup.on('failed', (error, jobInfo) => {
+        logger.warn('GenAI rate limit hit for IP: %s', jobInfo.options.id);
+    });
+    _rateLimitGroupKey = key;
+    logger.info('Rate limit groups initialized: genai=%d/day api=%d/day', genaiLimit, apiLimit);
+}
 
 // Admin session — unauthenticated; must be before the auth middleware
 router.post('/admin/session', express.json(), (req, res) => {
@@ -264,9 +279,14 @@ router.use(async (req, res, next) => {
 
     // --- Limiter for public connector ---
     if (session.type === 'public') {
+        const cfg = loadProxyConfig();
+        if (cfg.allPublicSessions === false) {
+            return res.status(403).json({ error: 'Public sessions are currently disabled.' });
+        }
         const isApi   = req.path.includes('api-proxy');
         const isGenai = req.path.includes('genai');
         if (isApi || isGenai) {
+            ensureRateLimitGroups();
             const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
             const group = isGenai ? publicGenaiGroup : publicApiGroup;
             const ipLimiter = group.key(clientIp);
@@ -948,10 +968,14 @@ router.get('/admin/stats', async (req, res) => {
         sessions: { total: sessionStats.total, active: sessionStats.active, byType: sessionStats.byType },
         events: { total: eventRing.length, byKind: eventCounts },
         rateLimit: {
-            publicApi:   { callsToday: dailyStats.apiCalls,   limitPerIpPerDay: 5000 },
-            publicGenai: { callsToday: dailyStats.genaiCalls, limitPerIpPerDay: 40   },
+            publicApi:   { callsToday: dailyStats.apiCalls,   limitPerIpPerDay: loadProxyConfig().publicSessionLimiterConfiguration?.apiPerIpPerDay   ?? 5000 },
+            publicGenai: { callsToday: dailyStats.genaiCalls, limitPerIpPerDay: loadProxyConfig().publicSessionLimiterConfiguration?.genaiPerIpPerDay ?? 40   },
         },
     });
+});
+
+router.get('/admin/config', (req, res) => {
+    res.json(loadProxyConfig());
 });
 
 router.get('/admin/sessions', (req, res) => {
