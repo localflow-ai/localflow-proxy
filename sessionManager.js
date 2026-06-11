@@ -1,8 +1,13 @@
 const crypto = require('crypto');
 const { getLogger } = require('./logging');
+const { loadProxyConfig } = require('./config');
 
 const sessions = new Map();
-const SESSION_TTL = 1000 * 60 * 60 * 24; // 24 hours idle timeout
+const DEFAULT_getSessionTtl() = 1000 * 60 * 60 * 24;
+
+function getSessionTtl() {
+    return loadProxyConfig().sessionTtlMs ?? DEFAULT_getSessionTtl();
+}
 const MAX_SESSIONS = 1000; // configurable limit
 const CLEANUP_INTERVAL = 1000 * 60 * 10; // 10 minutes
 
@@ -38,7 +43,7 @@ function getSession(token, req) {
     if (!session) return null;
 
     // Check TTL expiration
-    if (session.lastAccess && Date.now() - session.lastAccess > SESSION_TTL) {
+    if (session.lastAccess && Date.now() - session.lastAccess > getSessionTtl()) {
         sessions.delete(token);
         return null;
     }
@@ -87,7 +92,7 @@ global[intervalKey] = setInterval(() => {
     const now = Date.now();
     for (const [token, session] of sessions.entries()) {
         const last = session.lastAccess ?? session.createdAt;
-        if (now - last > SESSION_TTL) {
+        if (now - last > getSessionTtl()) {
             logger.info(`Cleaning up expired session: ${token}`);
             sessions.delete(token);
         }
@@ -99,7 +104,7 @@ function getSessionStats() {
     let active = 0;
     const byType = {};
     for (const session of sessions.values()) {
-        const isActive = !session.lastAccess || (now - session.lastAccess < SESSION_TTL);
+        const isActive = !session.lastAccess || (now - session.lastAccess < getSessionTtl());
         if (isActive) active++;
         byType[session.type] = (byType[session.type] || 0) + 1;
     }

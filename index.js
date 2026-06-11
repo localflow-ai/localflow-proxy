@@ -7,11 +7,17 @@ const routes = require('./routes.js');
 
 const { getLogger } = require('./logging');
 const logger = getLogger('index');
+const { loadProxyConfig } = require('./config');
 
 const app = express();
 app.set('trust proxy', true);
 app.use(cors({
-    origin: true,
+    origin: (origin, callback) => {
+        const allowed = loadProxyConfig().allowedOrigins ?? '*';
+        if (allowed === '*' || !origin) return callback(null, true);
+        const origins = Array.isArray(allowed) ? allowed : [allowed];
+        callback(null, origins.includes(origin) ? true : null);
+    },
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Proxy-Token', 'X-Proxy-API-Key', 'Range'],
     credentials: true
 }));
