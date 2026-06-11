@@ -167,25 +167,11 @@ function ensureRateLimitGroups() {
         reservoir: apiLimit,
         reservoirRefreshAmount: apiLimit,
         reservoirRefreshInterval: 60 * 60 * 1000 * 24,
-        maxConcurrent: 1,
-        highWater: 500,
-        strategy: Bottleneck.strategy.OVERFLOW,
-        rejectOnDrop: true,
     });
     publicGenaiGroup = new Bottleneck.Group({
         reservoir: genaiLimit,
         reservoirRefreshAmount: genaiLimit,
         reservoirRefreshInterval: 60 * 60 * 1000 * 24,
-        maxConcurrent: 1,
-        highWater: 10,
-        strategy: Bottleneck.strategy.OVERFLOW,
-        rejectOnDrop: true,
-    });
-    publicApiGroup.on('failed', (error, jobInfo) => {
-        logger.warn('API rate limit hit for IP: %s', jobInfo.options.id);
-    });
-    publicGenaiGroup.on('failed', (error, jobInfo) => {
-        logger.warn('GenAI rate limit hit for IP: %s', jobInfo.options.id);
     });
     _rateLimitGroupKey = key;
     logger.info('Rate limit groups initialized: genai=%d/day api=%d/day', genaiLimit, apiLimit);
@@ -300,17 +286,16 @@ router.use(async (req, res, next) => {
             const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
             const group = isGenai ? publicGenaiGroup : publicApiGroup;
             const ipLimiter = group.key(clientIp);
-            try {
-                await ipLimiter.schedule(() => Promise.resolve());
-                const remaining = await ipLimiter.currentReservoir();
-                logger.debug(`IP: ${clientIp} | ${isGenai ? 'GenAI' : 'API'} quota remaining: ${remaining}`);
-            } catch (err) {
+            const remaining = await ipLimiter.currentReservoir();
+            if (remaining !== null && remaining <= 0) {
                 logger.warn('Rate limit triggered for IP %s on %s', clientIp, req.path);
                 return res.status(429).json({
                     error: 'Too many requests',
                     detail: `Public session ${isGenai ? 'GenAI' : 'API'} rate limit exceeded.`
                 });
             }
+            await ipLimiter.incrementReservoir(-1);
+            logger.debug(`IP: ${clientIp} | ${isGenai ? 'GenAI' : 'API'} quota remaining: ${remaining - 1}`);
         }
     }
     // ---------------------------------
