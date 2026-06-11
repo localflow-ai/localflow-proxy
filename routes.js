@@ -611,6 +611,25 @@ function loadLlmConfigs() {
     return llmConfigs;
 }
 
+// Resolves the built-in API key for a given session type.
+// apiKey forms:
+//   "key"              → available to all sessions (legacy / shorthand for { "*": "key" })
+//   { "*": "key" }     → available to all sessions
+//   { "public": "key" }→ only for public sessions
+//   { "!public": "key"}→ all sessions except public
+// Exact match > wildcard > negation. BYOK always takes precedence (handled by caller).
+function resolveBuiltInKey(cfg, sessionType) {
+    const raw = cfg.apiKey;
+    if (!raw) return null;
+    if (typeof raw === 'string') return raw || null;
+    if (raw[sessionType]) return raw[sessionType];
+    if (raw['*']) return raw['*'];
+    for (const [k, v] of Object.entries(raw)) {
+        if (k.startsWith('!') && k.slice(1) !== sessionType) return v || null;
+    }
+    return null;
+}
+
 router.get('/common/llm-configs', asyncHandler(async (req, res) => {
     const configs = loadLlmConfigs();
     const safe = configs.map(({ id, displayName, protocol, model, isDefault }) =>
@@ -641,9 +660,11 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
         protocol = cfg.protocol;
         model = cfg.model;
         baseUrl = cfg.baseUrl;
-        // User BYOK key takes precedence over the server-configured key
-        apiKey = request.apiKey ? decrypt(request.apiKey, sessionInfo.orgId) : cfg.apiKey;
-        if (!apiKey) return res.status(400).json({ error: `No API key configured for model: ${request.modelId}` });
+        // BYOK takes precedence; otherwise use the built-in key for this session type
+        apiKey = request.apiKey
+            ? decrypt(request.apiKey, sessionInfo.orgId)
+            : resolveBuiltInKey(cfg, req.session.type);
+        if (!apiKey) return res.status(400).json({ error: `No API key for model '${request.modelId}' with session type '${req.session.type}'. Please provide your own key.` });
 
         logger.info('LLM proxy request protocol=%s model=%s', protocol, model);
 
