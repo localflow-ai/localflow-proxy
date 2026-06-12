@@ -1165,7 +1165,7 @@ Search Query Parameters:
         name: "Nominatim (OSM Geocoding)",
         id: "osm-nominatim",
         authType: "none",
-        requiredReferer: "https://apps.daquota.io",
+        requiredReferer: "https://apps.localflow.fr",
         requiredUserAgent: "daquota.io",
         waitMs: 1000,
         baseUrl: "https://nominatim.openstreetmap.org",
