@@ -37,6 +37,11 @@ function decodeBase64UrlSafe(str) {
   return Buffer.from(str + padding, 'base64').toString('utf8');
 }
 
+// Mask a secret for logging — keeps only the last 4 characters
+function mask(secret) {
+  return secret ? secret.replace(/.(?=.{4})/g, '*') : secret;
+}
+
 class SalesforceConnector extends BaseConnector {
   constructor() {
     super();
@@ -90,9 +95,9 @@ class SalesforceConnector extends BaseConnector {
 
         const accessToken = signedRequestData.client.oauthToken;
         const instanceUrl = signedRequestData.client.instanceUrl;
-        logger.debug('signed request %s', signedRequestData);
+        logger.debug('signed request payload keys: %s', Object.keys(signedRequestData).join(', '));
         logger.debug('instanceUrl (from signed request) %s', signedRequestData.client?.instanceUrl);
-        logger.debug('accessToken (from signed request) %s', signedRequestData.client?.accessToken);
+        logger.debug('oauthToken (from signed request) %s', mask(signedRequestData.client?.oauthToken));
 
         this.conn = new jsforce.Connection({
           instanceUrl,
@@ -110,7 +115,7 @@ class SalesforceConnector extends BaseConnector {
 
         logger.debug('Logged in via Signed Request');
         logger.debug('instanceUrl: %s', this.conn.instanceUrl);
-        logger.debug('accessToken: %s', this.conn.accessToken);
+        logger.debug('accessToken: %s', mask(this.conn.accessToken));
 
       } catch (error) {
         logger.error('Error processing signed request: %s', error);
