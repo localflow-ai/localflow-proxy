@@ -3,10 +3,10 @@ const { getLogger } = require('./logging');
 const { loadProxyConfig } = require('./config');
 
 const sessions = new Map();
-const DEFAULT_getSessionTtl() = 1000 * 60 * 60 * 24;
+const DEFAULT_SESSION_TTL = 1000 * 60 * 60 * 24;
 
 function getSessionTtl() {
-    return loadProxyConfig().sessionTtlMs ?? DEFAULT_getSessionTtl();
+    return loadProxyConfig().sessionTtlMs ?? DEFAULT_SESSION_TTL;
 }
 const MAX_SESSIONS = 1000; // configurable limit
 const CLEANUP_INTERVAL = 1000 * 60 * 10; // 10 minutes
