@@ -61,7 +61,7 @@ All secrets — LLM keys, CRM credentials, master encryption key — live exclus
 - API-key injection via query param, header, request body, or route placeholder
 - OAuth 2.0 client-credentials token exchange for third-party APIs
 - URL rewrite rules applied before forwarding
-- Per-source throttling and per-IP rate limiting on public sessions (Bottleneck), configurable via `config.json`
+- Per-source throttling and per-IP daily quotas on public sessions, configurable via `config.json` (limit changes apply immediately to existing counters)
 - Layout-preserving PDF extraction via Python/pdfplumber with keyword-based page filtering
 - Session-scoped bidirectional field and object-type aliases (connector field mapping)
 
@@ -459,7 +459,7 @@ Returns all active sessions (tokens truncated).
 
 ---
 
-#### `GET /admin/api-config` / `POST /admin/api-config` / `DELETE /admin/api-config/:id`
+#### `GET /admin/api-config` / `POST /admin/api-config` / `PUT /admin/api-config/:id` / `DELETE /admin/api-config/:id`
 
 Read and manage the API descriptor list (`api-config.json`).
 
