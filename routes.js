@@ -148,33 +148,27 @@ const throttler = (req, res, next) => {
         });
 };
 
-let publicApiGroup = null;
-let publicGenaiGroup = null;
-let _rateLimitGroupKey = null;
+// Per-IP daily quota using a plain Map — avoids Bottleneck.Group's idle-limiter cleanup
+// which would silently reset the quota whenever an IP goes quiet for a few minutes.
+const _quotas = { genai: new Map(), api: new Map() };
 
-function ensureRateLimitGroups() {
-    const cfg = loadProxyConfig();
-    const rl = cfg.publicSessionLimiterConfiguration ?? {};
-    const genaiLimit = rl.genaiPerIpPerDay ?? 40;
-    const apiLimit   = rl.apiPerIpPerDay   ?? 5000;
-    const key = `${genaiLimit}:${apiLimit}`;
-    if (key === _rateLimitGroupKey) return;
+function _consumeQuota(store, ip, limit) {
+    const now = Date.now();
+    let e = store.get(ip);
+    if (!e || now >= e.resetAt) {
+        e = { count: 0, resetAt: now + 86_400_000 };
+        store.set(ip, e);
+    }
+    if (e.count >= limit) return { allowed: false, remaining: 0 };
+    e.count++;
+    return { allowed: true, remaining: limit - e.count };
+}
 
-    if (publicApiGroup) publicApiGroup.disconnect();
-    if (publicGenaiGroup) publicGenaiGroup.disconnect();
-
-    publicApiGroup = new Bottleneck.Group({
-        reservoir: apiLimit,
-        reservoirRefreshAmount: apiLimit,
-        reservoirRefreshInterval: 60 * 60 * 1000 * 24,
-    });
-    publicGenaiGroup = new Bottleneck.Group({
-        reservoir: genaiLimit,
-        reservoirRefreshAmount: genaiLimit,
-        reservoirRefreshInterval: 60 * 60 * 1000 * 24,
-    });
-    _rateLimitGroupKey = key;
-    logger.info('Rate limit groups initialized: genai=%d/day api=%d/day', genaiLimit, apiLimit);
+// Returns the real client IP, respecting X-Forwarded-For set by a reverse proxy.
+function getClientIp(req) {
+    const fwd = req.headers['x-forwarded-for'];
+    if (fwd) return fwd.split(',')[0].trim();
+    return req.ip || req.socket.remoteAddress;
 }
 
 // Admin session — unauthenticated; must be before the auth middleware
@@ -205,7 +199,7 @@ router.post('/session', express.json(), asyncHandler(async (req, res) => {
         await connector.login(config);
 
         const token = createSession(type, connector);
-        pushEvent('session', { ip: req.ip, sessionType: type });
+        pushEvent('session', { ip: getClientIp(req), sessionType: type });
         res.json({ token });
     } catch (err) {
         res.status(401).json({ error: 'Authentication failed', detail: err.message });
@@ -282,20 +276,18 @@ router.use(async (req, res, next) => {
         const isApi   = req.path.includes('api-proxy');
         const isGenai = req.path.includes('genai');
         if (isApi || isGenai) {
-            ensureRateLimitGroups();
-            const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-            const group = isGenai ? publicGenaiGroup : publicApiGroup;
-            const ipLimiter = group.key(clientIp);
-            const remaining = await ipLimiter.currentReservoir();
-            if (remaining !== null && remaining <= 0) {
+            const rl = cfg.publicSessionLimiterConfiguration ?? {};
+            const limit = isGenai ? (rl.genaiPerIpPerDay ?? 40) : (rl.apiPerIpPerDay ?? 5000);
+            const clientIp = getClientIp(req);
+            const { allowed, remaining } = _consumeQuota(isGenai ? _quotas.genai : _quotas.api, clientIp, limit);
+            logger.debug(`IP: ${clientIp} | ${isGenai ? 'GenAI' : 'API'} quota remaining: ${remaining}`);
+            if (!allowed) {
                 logger.warn('Rate limit triggered for IP %s on %s', clientIp, req.path);
                 return res.status(429).json({
                     error: 'Too many requests',
                     detail: `Public session ${isGenai ? 'GenAI' : 'API'} rate limit exceeded.`
                 });
             }
-            await ipLimiter.incrementReservoir(-1);
-            logger.debug(`IP: ${clientIp} | ${isGenai ? 'GenAI' : 'API'} quota remaining: ${remaining - 1}`);
         }
     }
     // ---------------------------------
@@ -449,8 +441,7 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
         const response = await fetch(finalUrl, fetchOptions).finally(() => clearTimeout(abortTimer));
         res.status(response.status);
 
-        const clientIpProxy = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        pushEvent('api-proxy', { ip: clientIpProxy, url: targetUrl, apiName: dataSource?.name ?? null, status: response.status });
+        pushEvent('api-proxy', { ip: getClientIp(req), url: targetUrl, apiName: dataSource?.name ?? null, status: response.status });
         bumpDailyStat('apiCalls');
 
         const forbiddenResponseHeaders = [
@@ -485,8 +476,7 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
 
     } catch (err) {
         logger.error('Proxy Error: %s', err.message);
-        const clientIpProxyErr = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        pushEvent('api-proxy', { ip: clientIpProxyErr, url: targetUrl, apiName: dataSource?.name ?? null, status: 502 });
+        pushEvent('api-proxy', { ip: getClientIp(req), url: targetUrl, apiName: dataSource?.name ?? null, status: 502 });
         bumpDailyStat('apiCalls');
         res.status(502).json({ error: 'Bad Gateway', message: err.message });
     }
@@ -664,8 +654,7 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
             return res.status(400).json({ error: `Unknown protocol: ${protocol}` });
         }
 
-        const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-        pushEvent('genai', { ip: clientIp, model, status: 200 });
+        pushEvent('genai', { ip: getClientIp(req), model, status: 200 });
         bumpDailyStat('genaiCalls');
         res.json(llmResponse);
     } catch (err) {
@@ -862,8 +851,7 @@ router.post('/common/extract-pdf', throttler,
 
     // 4. Enhanced Response with Metadata
     const returnedPages = (finalContent.match(/## Page/g) || []).length;
-    const clientIpPdf = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    pushEvent('pdf', { ip: clientIpPdf, pages: returnedPages });
+    pushEvent('pdf', { ip: getClientIp(req), pages: returnedPages });
     res.json({
         success: true,
         metadata: pdfMeta,
