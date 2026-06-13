@@ -280,6 +280,18 @@ def _extract_page(page) -> str:
             best_found = found
             best_strategy = strategy
 
+    # Coverage guard: table detection can miss a data region that has no ruling
+    # lines (e.g. column separators drawn only around the header band). If a
+    # large share of the page's words fall below the last detected table, the
+    # table path would silently drop them — discard it and fall through to the
+    # word-based path, which reads the whole page.
+    if best_found:
+        guard_words = page.extract_words(x_tolerance=3, y_tolerance=3)
+        last_bottom = max(t.bbox[3] for t in best_found)
+        below = sum(1 for w in guard_words if w['top'] > last_bottom)
+        if guard_words and below / len(guard_words) > 0.25:
+            best_found = None
+
     if best_found:
         found = best_found
 
