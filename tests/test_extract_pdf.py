@@ -4,6 +4,7 @@ Regression tests for scripts/extract_pdf.py.
 Run with:  python3 -m pytest tests/
 """
 
+import io
 import os
 import re
 import sys
@@ -15,9 +16,25 @@ import extract_pdf  # noqa: E402
 
 SAMPLES = os.path.join(os.path.dirname(__file__), '..', 'pdf-samples')
 
+# All sample PDFs exercised by the suite. pdf-samples/ is git-ignored (the files
+# are real, non-public statements), so a fresh checkout won't have them — tests
+# skip rather than fail when a sample is missing.
+SAMPLE_FILES = [
+    'nouveau-releve-compte.pdf',
+    'C92P006.pdf',
+    'C92P007.pdf',
+    'Investment_Management_Report_-Bankers-_20260504115703.pdf',
+    'Investment_Management_Report_-Bankers-_20260428180919.pdf',
+    'Javal Portfolio Review March 2026.pdf',
+    'Synthèse EdR EJ - 2026.03.31.pdf',
+]
+
 
 def load(filename: str) -> bytes:
-    with open(os.path.join(SAMPLES, filename), 'rb') as f:
+    path = os.path.join(SAMPLES, filename)
+    if not os.path.exists(path):
+        pytest.skip(f'sample not present: pdf-samples/{filename}')
+    with open(path, 'rb') as f:
         return f.read()
 
 
@@ -169,3 +186,143 @@ def test_invest_report_page7_quarterly_rows(invest_report):
     assert "30.04.2026 | 3.65 | 6'751'498" in text
     assert "31.03.2026 | -0.14 | 6'515'490" in text
     assert "31.12.2025 | 0.51 | 5'426'955" in text
+
+
+# ---------------------------------------------------------------------------
+# Portfolio statement page 1  (C92P006.pdf)
+#
+# Regression: the column ruling lines on page 1 span only the header band, so
+# find_tables detected just the title + column header (≈9% of the words) and
+# the table path silently dropped every data row below it. The coverage guard
+# (>25% of words below the last table → fall back to word-based extraction)
+# must keep page 1's positions.
+# ---------------------------------------------------------------------------
+
+def test_portfolio_page1_not_empty(portfolio):
+    """Page 1 used to come back as header-only — it must contain position rows."""
+    text = page_text(portfolio, 1)
+    isin_lines = [l for l in text.splitlines()
+                  if re.match(r'[A-Z]{2}[A-Z0-9]{10} \|', l)]
+    assert len(isin_lines) >= 15, f'page 1 dropped data rows: only {len(isin_lines)} found'
+
+
+def test_portfolio_page1_known_rows(portfolio):
+    text = page_text(portfolio, 1)
+    assert ('US02079K3059 | ALPHABET CL.A | 1 800,00 UNT | 0,00 UNT | 250,946854 '
+            '| 31/03/2026 | 21,61720550 | 451 704,34 | 5,23 | 412 793,37') in text
+    assert ('US67066G1040 | NVIDIA | 3 295,00 UNT | 0,00 UNT | 152,194782 '
+            '| 31/03/2026 | 12,63913800 | 501 481,81 | 5,81 | 459 835,85') in text
+
+
+# ---------------------------------------------------------------------------
+# Portfolio statement  (C92P007.pdf) — same layout family as C92P006
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope='module')
+def portfolio7():
+    return extract_pdf.extract(load('C92P007.pdf'))
+
+
+def test_portfolio7_page_count(portfolio7):
+    assert portfolio7['metadata']['totalPdfPages'] == 3
+
+
+def test_portfolio7_page1_has_positions(portfolio7):
+    """Same page-1 coverage regression as C92P006."""
+    text = page_text(portfolio7, 1)
+    isin_lines = [l for l in text.splitlines()
+                  if re.match(r'[A-Z]{2}[A-Z0-9]{10} \|', l)]
+    assert len(isin_lines) >= 10, f'page 1 dropped data rows: only {len(isin_lines)} found'
+
+
+def test_portfolio7_page1_alphabet(portfolio7):
+    text = page_text(portfolio7, 1)
+    assert ('US02079K3059 | ALPHABET CL.A | 700,00 UNT | 0,00 UNT | 250,946854 '
+            '| 31/03/2026 | 21,62337140 | 175 662,80 | 5,20 | 160 526,44') in text
+
+
+# ---------------------------------------------------------------------------
+# Investment management report  (…_20260428180919.pdf) — sibling of the 0504 file
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope='module')
+def invest_report_0428():
+    return extract_pdf.extract(
+        load('Investment_Management_Report_-Bankers-_20260428180919.pdf')
+    )
+
+
+def test_invest_report_0428_page_count(invest_report_0428):
+    assert invest_report_0428['metadata']['totalPdfPages'] == 16
+
+
+def test_invest_report_0428_page5_quarterly_row(invest_report_0428):
+    text = page_text(invest_report_0428, 5)
+    assert "31.03.2026 | -0.53 | 6'515'490" in text
+
+
+# ---------------------------------------------------------------------------
+# Equity review  (Javal Portfolio Review March 2026.pdf)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope='module')
+def javal_review():
+    return extract_pdf.extract(load('Javal Portfolio Review March 2026.pdf'))
+
+
+def test_javal_page_count(javal_review):
+    assert javal_review['metadata']['totalPdfPages'] == 7
+
+
+def test_javal_page2_top_holding(javal_review):
+    text = page_text(javal_review, 2)
+    assert 'ROLLS-ROYCE HOLDINGS' in text
+    assert 'Industrials' in text
+    assert '8.00' in text
+
+
+# ---------------------------------------------------------------------------
+# Insurance synthesis  (Synthèse EdR EJ - 2026.03.31.pdf)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope='module')
+def edr_synthese():
+    return extract_pdf.extract(load('Synthèse EdR EJ - 2026.03.31.pdf'))
+
+
+def test_edr_page_count(edr_synthese):
+    assert edr_synthese['metadata']['totalPdfPages'] == 9
+
+
+def test_edr_page6_investments_section(edr_synthese):
+    text = page_text(edr_synthese, 6)
+    assert 'DÉTAILS DES INVESTISSEMENTS' in text
+
+
+# ---------------------------------------------------------------------------
+# Generic coverage guard — across every sample PDF
+#
+# This is the future-proof regression net for the page-1 bug class: any page
+# that pdfplumber sees as text-dense must extract to a comparable amount of
+# text. A dense page (>150 words) that collapses to a near-empty extraction is
+# exactly the dropped-content failure mode, regardless of which PDF triggers it.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('filename', SAMPLE_FILES)
+def test_dense_pages_not_dropped(filename):
+    import pdfplumber
+    data = load(filename)  # skips if the sample is absent
+    result = extract_pdf.extract(data)
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for i, page in enumerate(pdf.pages, 1):
+            words = page.extract_words(x_tolerance=3, y_tolerance=3)
+            if len(words) <= 150:
+                continue  # sparse / cover page — not a coverage concern
+            text = page_text(result, i)
+            # A properly extracted page reproduces its words plus ' | ' separators,
+            # so char count comfortably exceeds word count. The buggy header-only
+            # extraction produced far less text than the page had words.
+            assert len(text) >= len(words), (
+                f'{filename} page {i}: {len(words)} words but only {len(text)} '
+                f'chars extracted — content was dropped'
+            )
