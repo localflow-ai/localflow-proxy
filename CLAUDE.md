@@ -11,6 +11,7 @@ Node/Express gateway for metadata-first AI apps: LLM bridge, API governance, CRM
 ## Conventions
 - Proxy URL: `https://backoffice.daquota.io/<proxyname>`; default proxy is `demo`. `/v1` is deprecated — don't use it.
 - Node.js 20+.
+- Keep `CHANGELOG.md` / `ROADMAP.md` current: add a CHANGELOG entry under `[Unreleased]` for any change to the public surface (endpoints, config shape, connectors); move a ROADMAP item to the CHANGELOG when it ships.
 
 ## Run
 - Dev: `npm run dev` (nodemon). Prod: `npm run prod:start` (pm2; see `prod:*` scripts).
