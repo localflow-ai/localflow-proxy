@@ -26,7 +26,7 @@ It serves five key purposes:
 4. [API reference](#api-reference)
 5. [Connectors](#connectors)
 6. [Contributing](#contributing)
-7. [Roadmap](#roadmap)
+7. [Roadmap & changelog](#roadmap--changelog)
 8. [License](#license)
 
 ---
@@ -677,26 +677,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, code style, the connector
 
 ---
 
-## Roadmap
+## Roadmap & changelog
 
-Connectors planned or in progress:
+- **[ROADMAP.md](ROADMAP.md)** — planned work and connector support status.
+- **[CHANGELOG.md](CHANGELOG.md)** — release history.
 
-| Connector | Status |
-|-----------|--------|
-| Odoo | ✅ Done |
-| Salesforce | ✅ Done |
-| Zoho CRM | Planned |
-| HubSpot | Planned |
-| QuickBooks Online | Planned |
-| Xero | Planned |
-| NetSuite | Planned |
-| ERPNext / Frappe | Planned |
-| Dynamics 365 Business Central | Planned |
-| SuiteCRM | Planned |
-| Freshsales | Planned |
-| SQL (generic) | In progress |
-
-Community contributions for any of these (or any other connector) are welcome — see [Writing a new connector](#writing-a-new-connector).
+Community connector contributions are welcome — see [Writing a new connector](#writing-a-new-connector).
 
 ---
 
