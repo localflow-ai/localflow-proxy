@@ -8,6 +8,7 @@ package-lock.json
 .sfdx/
 pdf-samples/
 user-data/
+tests/baselines/
 config.json
 llm-configs.json
 api-config.json
