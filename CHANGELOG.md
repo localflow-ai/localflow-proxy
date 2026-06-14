@@ -10,6 +10,7 @@ and the project aims to follow [Semantic Versioning](https://semver.org/spec/v2.
 Pre-1.0.0 baseline — not yet tagged.
 
 ### Changed
+- PDF extraction (word-based path): columns are now assigned by whole gap-group rather than per word, so a wide value that straddles two data-row columns — e.g. a portfolio total `8 629 202,44` — stays in one cell instead of being split into `8 629 | 202,44`. Data rows are unaffected.
 - Per-IP daily quotas reimplemented with a plain `Map` (`_quotas` / `_consumeQuota`), replacing Bottleneck.Group. The previous implementation silently reset quotas: Bottleneck deletes idle limiters, and since the code only called `currentReservoir()` / `incrementReservoir()` without scheduling jobs, every limiter was always "idle" and got recreated with a full reservoir after a few minutes. Limits are now read from config on each request, so admin changes apply to live counters immediately.
 - Client IP resolution honours `X-Forwarded-For` (first hop) before falling back to `req.ip`, so per-IP limits work behind a reverse proxy.
 
