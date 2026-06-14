@@ -214,6 +214,17 @@ def test_portfolio_page1_known_rows(portfolio):
             '| 31/03/2026 | 12,63913800 | 501 481,81 | 5,81 | 459 835,85') in text
 
 
+def test_portfolio_page1_total_number_not_split(portfolio):
+    """
+    Regression: the TOTAL row's grand total is a wide number that sits across two
+    data-row columns. Per-word center-x binning sliced it into '8 629 | 202,44';
+    assigning whole gap-groups to columns keeps it as one cell.
+    """
+    text = page_text(portfolio, 1)
+    assert '8 629 202,44' in text
+    assert '8 629 | 202,44' not in text
+
+
 # ---------------------------------------------------------------------------
 # Portfolio statement  (C92P007.pdf) — same layout family as C92P006
 # ---------------------------------------------------------------------------

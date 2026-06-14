@@ -108,19 +108,25 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
         depth  = 0 if indent < 10 else (1 if indent < 60 else 2)
 
         if col_bounds:
+            # Assign whole gap-groups — not individual words — to columns. A run of
+            # words with sub-column spacing (e.g. the space-separated groups of a
+            # number like "8 629 202,44") must land in a single cell even when the
+            # grid derived from data rows would slice through it: a wide total sits
+            # across two data-row columns, and per-word binning would split it.
             cols_words = [[] for _ in col_bounds]
-            for w in row_sorted:
-                mid = (w['x0'] + w['x1']) / 2
-                assigned = False
+            for g in _gap_groups(row_sorted):
+                gx0 = min(w['x0'] for w in g)
+                gx1 = max(w['x1'] for w in g)
+                mid = (gx0 + gx1) / 2
+                assigned = None
                 for i, (cx0, cx1) in enumerate(col_bounds):
                     if cx0 <= mid < cx1:
-                        cols_words[i].append(w['text'])
-                        assigned = True
+                        assigned = i
                         break
-                if not assigned:
-                    nearest = min(range(len(col_bounds)),
-                                  key=lambda i: abs(mid - (col_bounds[i][0] + col_bounds[i][1]) / 2))
-                    cols_words[nearest].append(w['text'])
+                if assigned is None:
+                    assigned = min(range(len(col_bounds)),
+                                   key=lambda i: abs(mid - (col_bounds[i][0] + col_bounds[i][1]) / 2))
+                cols_words[assigned].append(' '.join(w['text'] for w in g))
             line = ' | '.join(' '.join(c) for c in cols_words)
         else:
             groups = _gap_groups(row_sorted)
