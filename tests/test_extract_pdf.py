@@ -188,6 +188,19 @@ def test_invest_report_page7_quarterly_rows(invest_report):
     assert "31.12.2025 | 0.51 | 5'426'955" in text
 
 
+def test_invest_report_detail_holdings_complete(invest_report):
+    """
+    Regression: the 'Détail du portefeuille' table was detected as a 2-column
+    currency+value strip, so holdings whose quantity/name sit in the left margin
+    (outside the cells) were dropped — MSCI WORLD, S&P500, SPDR DIVIDEND, GOLD.
+    The under-segmentation guard (words form many more columns than the ruling
+    lines found → use word-based extraction) keeps them.
+    """
+    text = '\n'.join(p['text'] for p in invest_report['pages'])
+    for name in ['MSCI WORLD', 'S&P500', 'STAT.STR.SPDR S&P DIVIDEND', 'SPDR GOLD TRUST']:
+        assert name in text, f'detail holding dropped: {name}'
+
+
 # ---------------------------------------------------------------------------
 # Portfolio statement page 1  (C92P006.pdf)
 #
