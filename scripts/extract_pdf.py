@@ -263,6 +263,32 @@ def _table_max_cols(tbl) -> int:
         return 0
 
 
+def _word_col_count(words) -> int:
+    """How many columns the raw word layout suggests, independent of ruling lines:
+    the max number of gap-separated groups in any single word-row. Used to detect
+    when a detected table under-segments the content (few ruling columns vs many
+    word columns)."""
+    if not words:
+        return 0
+    sorted_words = sorted(words, key=lambda w: w['top'])
+    rows = [[sorted_words[0]]]
+    for w in sorted_words[1:]:
+        if w['top'] - rows[-1][0]['top'] <= _ROW_YTOL:
+            rows[-1].append(w)
+        else:
+            rows.append([w])
+
+    def _ncols(row):
+        row = sorted(row, key=lambda w: w['x0'])
+        n = 1
+        for i in range(1, len(row)):
+            if row[i]['x0'] - row[i - 1]['x1'] >= _COL_GAP:
+                n += 1
+        return n
+
+    return max((_ncols(r) for r in rows), default=0)
+
+
 def _extract_page(page) -> str:
     # --- Attempt 1: column-guided extraction using table line detection -----
     strategies = [
@@ -286,16 +312,21 @@ def _extract_page(page) -> str:
             best_found = found
             best_strategy = strategy
 
-    # Coverage guard: table detection can miss a data region that has no ruling
-    # lines (e.g. column separators drawn only around the header band). If a
-    # large share of the page's words fall below the last detected table, the
-    # table path would silently drop them — discard it and fall through to the
-    # word-based path, which reads the whole page.
+    # Coverage guards: discard table detection and fall through to the word-based
+    # path (which reads the whole page) when the detected tables would drop content.
     if best_found:
         guard_words = page.extract_words(x_tolerance=3, y_tolerance=3)
+        # (a) A large share of words fall BELOW the last detected table — ruling
+        #     lines only around a header band, data rows underneath get dropped.
         last_bottom = max(t.bbox[3] for t in best_found)
         below = sum(1 for w in guard_words if w['top'] > last_bottom)
-        if guard_words and below / len(guard_words) > 0.25:
+        drop_below = bool(guard_words) and below / len(guard_words) > 0.25
+        # (b) The words form many more columns than the ruling lines found — the
+        #     table UNDER-SEGMENTS the content (e.g. a holdings table detected as a
+        #     2-column currency+value strip, with names/quantities sitting outside
+        #     the cells and getting lost). Word-based extraction reads them all.
+        under_segmented = _word_col_count(guard_words) >= best_cols + 3
+        if drop_below or under_segmented:
             best_found = None
 
     if best_found:
