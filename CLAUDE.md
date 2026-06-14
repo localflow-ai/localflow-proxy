@@ -13,6 +13,11 @@ Node/Express gateway for metadata-first AI apps: LLM bridge, API governance, CRM
 - Node.js 20+.
 - Keep `CHANGELOG.md` / `ROADMAP.md` current: add a CHANGELOG entry under `[Unreleased]` for any change to the public surface (endpoints, config shape, connectors); move a ROADMAP item to the CHANGELOG when it ships.
 
+## Tests
+- `python3 -m pytest tests/` — extraction tests over `pdf-samples/` (git-ignored private statements; tests skip when absent).
+- **After ANY change to `scripts/extract_pdf.py`, run the full suite — it compares every sample's full output against a saved baseline (`test_extraction_matches_baseline`), so it surfaces changes across ALL documents, not just the one you're fixing.** Never judge an extractor change by one PDF.
+- When the suite reports a baseline diff: review it. If the change is an intended improvement (not a regression), re-bless with `python3 tests/update_baselines.py`, then commit. Baselines live in `tests/baselines/` (git-ignored).
+
 ## Run
 - Dev: `npm run dev` (nodemon). Prod: `npm run prod:start` (pm2; see `prod:*` scripts).
 - Requires `MASTER_ENCRYPTION_KEY` in `.env.local`; `ADMIN_TOKEN` enables admin endpoints.

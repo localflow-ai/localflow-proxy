@@ -337,3 +337,38 @@ def test_dense_pages_not_dropped(filename):
                 f'{filename} page {i}: {len(words)} words but only {len(text)} '
                 f'chars extracted — content was dropped'
             )
+
+
+# ---------------------------------------------------------------------------
+# Baseline snapshot — the full extraction output of every sample is compared to
+# a saved baseline, so ANY change to the extractor surfaces immediately and
+# shows exactly where. Baselines live in tests/baselines/<sample>.txt and are
+# git-ignored (private statements). After an INTENDED change, review the diff
+# then re-bless with:  python3 tests/update_baselines.py
+# Skips when a baseline (or the sample) is absent — CI / fresh checkout.
+# ---------------------------------------------------------------------------
+
+BASELINES = os.path.join(os.path.dirname(__file__), 'baselines')
+
+
+def full_text(result: dict) -> str:
+    return '\n'.join(f"## Page {p['pageNum']}\n{p['text']}" for p in result['pages'])
+
+
+@pytest.mark.parametrize('filename', SAMPLE_FILES)
+def test_extraction_matches_baseline(filename):
+    baseline_path = os.path.join(BASELINES, filename + '.txt')
+    if not os.path.exists(baseline_path):
+        pytest.skip(f'no baseline for {filename} — run tests/update_baselines.py')
+    with open(baseline_path, encoding='utf-8') as f:
+        expected = f.read()
+    actual = full_text(extract_pdf.extract(load(filename)))  # load() skips if sample absent
+    if actual != expected:
+        import difflib
+        diff = '\n'.join(difflib.unified_diff(
+            expected.splitlines(), actual.splitlines(),
+            fromfile='baseline', tofile='current', lineterm='', n=1))
+        pytest.fail(
+            f'extraction changed for {filename} (review, then re-bless with '
+            f'tests/update_baselines.py):\n{diff[:4000]}'
+        )
