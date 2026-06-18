@@ -209,6 +209,10 @@ router.post('/session', express.json(), asyncHandler(async (req, res) => {
 router.get('/public/config', (req, res) => {
     const cfg = loadProxyConfig();
     res.json({
+        // When true, the proxy never forwards file attachments to the LLM.
+        // Clients must enforce metadata-only locally; the proxy rejects any
+        // genai request that carries attachments (defense in depth, below).
+        safeMode: cfg.safeMode === true,
         publicSessions: {
             enabled: cfg.allPublicSessions !== false,
             rateLimits: cfg.publicSessionLimiterConfiguration ?? { genaiPerIpPerDay: 40, apiPerIpPerDay: 5000 },
@@ -597,6 +601,15 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
             return res.status(400).json({ error: 'Invalid session' });
         }
 
+        // Safe mode: the proxy must never forward file contents to the LLM.
+        // Reject any request carrying attachments, regardless of what the
+        // client requested — the user cannot override a proxy-level policy.
+        if (loadProxyConfig().safeMode === true
+            && Array.isArray(request.messages)
+            && request.messages.some(m => Array.isArray(m.attachments) && m.attachments.length > 0)) {
+            return res.status(403).json({ error: 'Attachments are not allowed: this proxy runs in safe mode (data stays local).' });
+        }
+
         let protocol, model, apiKey, baseUrl;
 
         if (!request.modelId) return res.status(400).json({ error: 'Missing modelId' });
@@ -641,10 +654,15 @@ async function _proxyGemini(request, model, apiKey) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
     const body = {
         system_instruction: { parts: [{ text: request.system }] },
-        contents: request.messages.map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }],
-        })),
+        contents: request.messages.map(m => {
+            const parts = [];
+            if (m.content) parts.push({ text: m.content });
+            for (const a of m.attachments || []) {
+                parts.push({ inline_data: { mime_type: a.mimeType, data: a.data } });
+            }
+            if (parts.length === 0) parts.push({ text: '' });
+            return { role: m.role === 'assistant' ? 'model' : 'user', parts };
+        }),
         generation_config: {
             temperature: request.options?.temperature ?? 0.5,
             ...(request.options?.thinking ? { thinking_config: { thinking_level: 'high', include_thoughts: true } } : {}),
@@ -670,7 +688,17 @@ async function _proxyOpenAI(request, model, apiKey, baseUrl) {
         model: model || 'gpt-4o',
         messages: [
             { role: 'system', content: request.system },
-            ...request.messages,
+            ...request.messages.map(m => {
+                if (!m.attachments || m.attachments.length === 0) return { role: m.role, content: m.content };
+                const parts = [];
+                if (m.content) parts.push({ type: 'text', text: m.content });
+                for (const a of m.attachments) {
+                    const dataUrl = `data:${a.mimeType};base64,${a.data}`;
+                    if (a.mimeType.startsWith('image/')) parts.push({ type: 'image_url', image_url: { url: dataUrl } });
+                    else parts.push({ type: 'file', file: { filename: a.name, file_data: dataUrl } });
+                }
+                return { role: m.role, content: parts };
+            }),
         ],
         temperature: request.options?.temperature ?? 0.5,
     };
@@ -696,7 +724,17 @@ async function _proxyAnthropic(request, model, apiKey, baseUrl) {
     const body = {
         model: model || 'claude-opus-4-5',
         system: request.system,
-        messages: request.messages,
+        messages: request.messages.map(m => {
+            if (!m.attachments || m.attachments.length === 0) return { role: m.role, content: m.content };
+            const blocks = [];
+            if (m.content) blocks.push({ type: 'text', text: m.content });
+            for (const a of m.attachments) {
+                if (a.mimeType.startsWith('image/')) blocks.push({ type: 'image', source: { type: 'base64', media_type: a.mimeType, data: a.data } });
+                else if (a.mimeType === 'application/pdf') blocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } });
+                else blocks.push({ type: 'text', text: `[Attachment ${a.name} (${a.mimeType}) could not be inlined]` });
+            }
+            return { role: m.role, content: blocks };
+        }),
         max_tokens: thinking ? 16000 : 8192,
         temperature: thinking ? 1 : (request.options?.temperature ?? 0.5),
     };

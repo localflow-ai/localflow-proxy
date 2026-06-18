@@ -147,6 +147,7 @@ The proxy loads `.env` first, then `.env.local` (which overrides any duplicate k
 {
   "allowedOrigins": "*",
   "sessionTtlMs": 86400000,
+  "safeMode": false,
   "allPublicSessions": true,
   "publicSessionLimiterConfiguration": {
     "genaiPerIpPerDay": 40,
@@ -159,6 +160,7 @@ The proxy loads `.env` first, then `.env.local` (which overrides any duplicate k
 |-------|---------|-------------|
 | `allowedOrigins` | `"*"` | CORS allowed origins. `"*"` allows all. Use a string or array of strings to restrict. |
 | `sessionTtlMs` | `86400000` | Session idle timeout in milliseconds (default 24 h). |
+| `safeMode` | `false` | When `true`, the proxy never forwards file attachments to the LLM: any `/common/genai` request carrying `attachments` is rejected with HTTP 403, and `GET /public/config` reports `safeMode: true`. A policy clients cannot override. |
 | `allPublicSessions` | `true` | Set to `false` to disable all unauthenticated (public) sessions without a restart. |
 | `publicSessionLimiterConfiguration.genaiPerIpPerDay` | `40` | Max AI (genai) requests per IP per day for public sessions. |
 | `publicSessionLimiterConfiguration.apiPerIpPerDay` | `5000` | Max API proxy requests per IP per day for public sessions. |
@@ -311,16 +313,19 @@ These endpoints configure session-scoped aliases. The client can define its own 
 
 #### `GET /public/config`
 
-Returns public-facing proxy configuration — no token required. Intended for demo apps that display rate limit information before the user logs in.
+Returns public-facing proxy configuration — no token required. Intended for demo apps that display rate limit information before the user logs in, and for clients that must know whether the proxy enforces safe mode.
 
 ```json
 {
+  "safeMode": false,
   "publicSessions": {
     "enabled": true,
     "rateLimits": { "genaiPerIpPerDay": 10, "apiPerIpPerDay": 5000 }
   }
 }
 ```
+
+`safeMode: true` means the proxy refuses to forward file contents to the LLM (see `config.json`). Clients should hide any "send file to AI" option and keep file processing local.
 
 ---
 
@@ -357,6 +362,22 @@ Forward a prompt to an LLM. The proxy resolves the model, protocol, and API key 
 ```
 
 Supported protocols: `gemini`, `openai` (and OpenAI-compatible endpoints), `anthropic`.
+
+**Attachments.** A message may carry files for multimodal models:
+
+```json
+{
+  "modelId": "gemini-flash",
+  "system": "You are a helpful assistant.",
+  "messages": [{
+    "role": "user",
+    "content": "What's in this image?",
+    "attachments": [{ "name": "photo.png", "mimeType": "image/png", "data": "<base64, no data: prefix>" }]
+  }]
+}
+```
+
+The proxy maps attachments into each provider's native format (Gemini `inline_data`, OpenAI `image_url`/`file`, Anthropic `image`/`document`). **When the proxy runs with `safeMode: true`, any request carrying `attachments` is rejected with HTTP 403** — file contents never reach the LLM.
 
 ---
 

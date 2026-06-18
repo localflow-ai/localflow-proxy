@@ -20,6 +20,8 @@ Pre-1.0.0 baseline — not yet tagged.
 - Salesforce access tokens are now masked (last 4 chars) in debug logs instead of printed in full.
 
 ### Added
+- **`/common/genai` accepts attachments** — each `messages[]` entry may carry `attachments: [{ name, mimeType, data }]` (base64, no `data:` prefix). The proxy maps them into each provider's multimodal format (Gemini `inline_data`, OpenAI `image_url`/`file`, Anthropic `image`/`document`). Enables file-aware chat in `localflow-assistant`.
+- **Safe mode** — set `"safeMode": true` in `config.json` to forbid the proxy from ever forwarding file contents to the LLM: any `/common/genai` request carrying attachments is rejected with HTTP 403, and `GET /public/config` reports `safeMode` so clients can hide the "send to AI" option. A proxy-level policy users cannot override.
 - **Multi-LLM bridge** — Gemini, OpenAI (and OpenAI-compatible endpoints), and Anthropic; protocol/model/key resolved server-side from `llm-configs.json` by `modelId`. BYOK keys take precedence over server keys.
 - **Hot-reloadable `config.json`** — rate limits, public-session toggle, CORS origins, and session TTL reload on file change with no restart.
 - **Per-session-type built-in key resolution** in `llm-configs.json` (`{ "public": "…" }`, `{ "*": "…" }`, `{ "!public": "…" }`).

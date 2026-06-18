@@ -1,6 +1,7 @@
 {
   "allowedOrigins": "*",
   "sessionTtlMs": 86400000,
+  "safeMode": false,
   "allPublicSessions": true,
   "publicSessionLimiterConfiguration": {
     "genaiPerIpPerDay": 40,
