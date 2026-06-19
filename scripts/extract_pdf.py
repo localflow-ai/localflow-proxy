@@ -42,6 +42,34 @@ _NOISE    = re.compile(r'Numéro de compte:|Nom du rapport:|^Page \d+ sur \d+$')
 _COL_GAP  = 5.5  # pt — minimum inter-column gap for word-based mode
 _ROW_YTOL = 3    # pt — max vertical distance to consider words on the same row
 
+# Word splitting. Many PDFs encode spaces as gaps (no space glyph), and the gap
+# width scales with font size: a real space is ~0.25*fontsize, intra-word kerning
+# is ~0. A fixed x_tolerance fails on tightly-set/justified text (a 9pt line has
+# ~2.25pt spaces, below a 3pt tolerance, so words merge). x_tolerance_ratio makes
+# the threshold font-relative (tol = ratio*fontsize per char pair), so spaces are
+# detected regardless of font size. 0.15 sits safely between intra-word (~0.02)
+# and inter-word (~0.25) ratios. Over-splitting is harmless: the column logic
+# rejoins words within a cell with a single space (gaps < _COL_GAP).
+_X_TOL_RATIO = 0.15
+_WORD_KW  = {'x_tolerance': 3, 'y_tolerance': 3, 'x_tolerance_ratio': _X_TOL_RATIO}
+
+# Font-relative word splitting occasionally splits a word from a trailing comma or
+# full stop whose pre-glyph gap happens to reach space width. A space before ',' or
+# '.' is never valid (French puts thin spaces before ; : ! ? « » — but never before
+# a comma or period), so collapse it. Anchored on a preceding word char so it can't
+# touch a lone '.'/'-' cell or the ' | ' column separators.
+_PUNCT_FIX = re.compile(r'(\w) ([,.])')
+
+
+def _normalize(text: str) -> str:
+    """Final text clean-up applied to every page."""
+    # Some PDFs encode spaces (incl. the thousands separator in numbers) as the
+    # U+FFFF/U+FFFE noncharacter glyph; pdfplumber keeps it inside the word, so
+    # "Hoche￿Patrimoine" / "2￿843￿528" come out glued. These code points are never
+    # valid text — restore the intended space.
+    text = text.replace('￿', ' ').replace('￾', ' ')
+    return _PUNCT_FIX.sub(r'\1\2', text)
+
 
 # ---------------------------------------------------------------------------
 # Word-based helpers (fallback path)
@@ -160,11 +188,25 @@ def _col_bounds_from_table(table):
 
 
 def _is_blob_row(row_data):
-    """True if pdfplumber merged multiple transaction rows into one cell."""
-    return any(
+    """True if pdfplumber merged many rows into one table row.
+
+    Two layouts trigger this when only vertical column rules are drawn (no
+    horizontal separators):
+      - bank statements: a cell holds many transaction dates;
+      - borderless holdings tables: several columns each hold many stacked
+        text lines (e.g. all security names in one cell, all ISINs in the
+        next, …).  Requiring >= 2 such columns avoids misfiring on a single
+        wrapped header/label cell, whose line count also stays well below the
+        threshold (a wrapped header is ~2-3 lines, a merged blob is dozens).
+    """
+    date_blob = any(
         cell and len(re.findall(r'\d{2}/\d{2}/\d{2}', cell)) > 2
         for cell in row_data
     )
+    multiline_cols = sum(
+        1 for cell in row_data if cell and len(cell.splitlines()) > 5
+    )
+    return date_blob or multiline_cols >= 2
 
 
 def _words_to_cols(words, col_bounds) -> str:
@@ -233,7 +275,7 @@ def _extract_table(page, tbl, page_words_cache) -> list:
                 y0 = min(c[1] for c in non_none)
                 y1 = max(c[3] for c in non_none)
                 if page_words_cache[0] is None:
-                    page_words_cache[0] = page.extract_words(x_tolerance=3, y_tolerance=3)
+                    page_words_cache[0] = page.extract_words(**_WORD_KW)
                 row_words = [w for w in page_words_cache[0]
                              if y0 <= w['top'] <= y1]
                 row_text = _words_to_cols(row_words, col_bounds)
@@ -315,7 +357,7 @@ def _extract_page(page) -> str:
     # Coverage guards: discard table detection and fall through to the word-based
     # path (which reads the whole page) when the detected tables would drop content.
     if best_found:
-        guard_words = page.extract_words(x_tolerance=3, y_tolerance=3)
+        guard_words = page.extract_words(**_WORD_KW)
         # (a) A large share of words fall BELOW the last detected table — ruling
         #     lines only around a header band, data rows underneath get dropped.
         last_bottom = max(t.bbox[3] for t in best_found)
@@ -342,7 +384,7 @@ def _extract_page(page) -> str:
         first_table_top = sorted_found[0].bbox[1]
         if first_table_top > 5:
             hdr_words = page.crop((0, 0, page.width, first_table_top)) \
-                            .extract_words(x_tolerance=3, y_tolerance=3)
+                            .extract_words(**_WORD_KW)
             hdr = _words_to_text(hdr_words)
             if hdr:
                 lines.append(hdr)
@@ -354,7 +396,7 @@ def _extract_page(page) -> str:
                 gap_y1 = tbl.bbox[1]
                 if gap_y1 - gap_y0 > 5:
                     if page_words_cache[0] is None:
-                        page_words_cache[0] = page.extract_words(x_tolerance=3, y_tolerance=3)
+                        page_words_cache[0] = page.extract_words(**_WORD_KW)
                     gap_words = [w for w in page_words_cache[0]
                                  if gap_y0 < w['top'] < gap_y1]
                     gap_text = _words_to_text(gap_words)
@@ -368,12 +410,12 @@ def _extract_page(page) -> str:
             return result
 
     # --- Attempt 2: word-based column detection (borderless pages) ----------
-    words = page.extract_words(x_tolerance=3, y_tolerance=3)
+    words = page.extract_words(**_WORD_KW)
     if words:
         return _words_to_text(words, derive_col_bounds=True)
 
     # --- Attempt 3: plain text (scanned / image-only pages) ----------------
-    text = page.extract_text() or ''
+    text = page.extract_text(**_WORD_KW) or ''
     return '\n'.join(l.rstrip() for l in text.splitlines() if l.strip())
 
 
@@ -385,7 +427,7 @@ def extract(data: bytes) -> dict:
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         pages = []
         for i, page in enumerate(pdf.pages, 1):
-            pages.append({'pageNum': i, 'text': _extract_page(page)})
+            pages.append({'pageNum': i, 'text': _normalize(_extract_page(page))})
 
         meta = pdf.metadata or {}
         def m(key): return meta.get(key) or meta.get('/' + key) or None

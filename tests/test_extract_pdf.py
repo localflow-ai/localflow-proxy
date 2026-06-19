@@ -27,6 +27,11 @@ SAMPLE_FILES = [
     'Investment_Management_Report_-Bankers-_20260428180919.pdf',
     'Javal Portfolio Review March 2026.pdf',
     'Synthèse EdR EJ - 2026.03.31.pdf',
+    'SITUATION 066000133.pdf',
+    'RELEVE AEP AU 12 06 26.pdf',
+    'VDK Catherine HP2G 10 06 2026.pdf',
+    'val 01 06 2026.pdf',
+    'description.pdf',
 ]
 
 
@@ -321,6 +326,89 @@ def test_edr_page_count(edr_synthese):
 def test_edr_page6_investments_section(edr_synthese):
     text = page_text(edr_synthese, 6)
     assert 'DÉTAILS DES INVESTISSEMENTS' in text
+
+
+# ---------------------------------------------------------------------------
+# Insurance holdings  (SITUATION 066000133.pdf)
+#
+# Regression: page 2's holdings table fills the page (no text below it, so the
+# coverage guard never fires) and only vertical column rules are drawn. The
+# 'lines_strict' strategy therefore merged all ~34 positions into ONE table row
+# (each column a single multi-line cell). The generalised blob detector (>= 2
+# columns each holding many lines → re-extract by words) restores the rows.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope='module')
+def situation():
+    return extract_pdf.extract(load('SITUATION 066000133.pdf'))
+
+
+def test_situation_page2_rows_not_a_blob(situation):
+    text = page_text(situation, 2)
+    rows = [l for l in text.splitlines() if re.search(r'\| [A-Z]{2}[A-Z0-9]{9,10} \|', l)]
+    assert len(rows) >= 30, f'holdings collapsed into a blob: only {len(rows)} rows'
+
+
+def test_situation_page2_known_row(situation):
+    text = page_text(situation, 2)
+    assert 'AIR LIQUIDE | FR0000120073 | 1,52% | 248,000000 | 176,54 € | 43 781,92 €' in text
+
+
+def test_situation_page2_no_merged_names(situation):
+    """Guard: the blob form (every security name glued in one cell) must not return."""
+    text = page_text(situation, 2)
+    assert 'AIR LIQUIDE ALPHABET' not in text
+
+
+# ---------------------------------------------------------------------------
+# Securities account  (val 01 06 2026.pdf) — a 12-column holdings table
+# ---------------------------------------------------------------------------
+
+def test_val_page2_twelve_column_row():
+    result = extract_pdf.extract(load('val 01 06 2026.pdf'))
+    text = page_text(result, 2)
+    assert ('GALDERMA GROUP SA CH1335392721 |  | Disponible | 40 | 179,537737 EUR '
+            '| 7 105,00 EUR | 7 181,51 EUR | 2,92% | 76,51 EUR | 1,08% | 0,00 EUR | 0') in text
+
+
+# ---------------------------------------------------------------------------
+# Research article  (description.pdf)
+#
+# Regression: justified prose encodes spaces as gaps that scale with font size.
+# A fixed x_tolerance=3 merged words on tightly-set lines (space ≈ 2.25pt at 9pt).
+# The font-relative x_tolerance_ratio restores them.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope='module')
+def description():
+    return extract_pdf.extract(load('description.pdf'))
+
+
+def test_description_spaces_preserved(description):
+    text = page_text(description, 1)
+    assert 'mortality. However, there are few national assessments' in text
+    assert 'Beata Strack,1 Jonathan P. DeShazo,2 Chris Gennings,3' in text
+
+
+def test_description_no_glued_run(description):
+    """Guard: the merged-words failure mode must not return."""
+    text = page_text(description, 1)
+    assert 'therearefewnationalassessments' not in text
+
+
+# ---------------------------------------------------------------------------
+# Life-insurance statement  (VDK Catherine HP2G 10 06 2026.pdf)
+#
+# Regression: this PDF encodes spaces (incl. thousands separators) as the U+FFFF
+# noncharacter glyph, which pdfplumber keeps inside the word ('Hoche￿Patrimoine').
+# Normalisation restores a real space.
+# ---------------------------------------------------------------------------
+
+def test_vdk_noncharacter_space_normalised():
+    result = extract_pdf.extract(load('VDK Catherine HP2G 10 06 2026.pdf'))
+    full = '\n'.join(p['text'] for p in result['pages'])
+    assert '￿' not in full and '￾' not in full
+    assert 'Hoche Patrimoine Deuxième génération' in full
 
 
 # ---------------------------------------------------------------------------
