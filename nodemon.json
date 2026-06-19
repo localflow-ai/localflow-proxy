@@ -1,0 +1,5 @@
+{
+  "comment": "Watch JS only. The config/data JSON files (config.json, llm-configs.json, api-config.json, permissions.json) are hot-reloaded by the app at runtime — restarting on them is unnecessary and, because sessions live in memory, would log every admin/user out whenever one is written (e.g. saving permissions from the console).",
+  "ext": "js,cjs,mjs",
+  "ignore": ["tests/", "user-data/", "pdf-samples/", "dist/", "*.json"]
+}

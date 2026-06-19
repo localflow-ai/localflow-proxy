@@ -9,6 +9,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "nodemon index.js",
+    "dev:stop": "sh scripts/stop-dev.sh",
     "prod:start": "pm2 start ecosystem.config.cjs",
     "prod:stop": "pm2 stop localflow-proxy",
     "prod:restart": "pm2 restart localflow-proxy",
