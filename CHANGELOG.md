@@ -11,6 +11,7 @@ Pre-1.0.0 baseline — not yet tagged.
 
 ### Added
 - **Authorization / permissions** — a hot-reloaded `permissions.json` (`public` / `authenticated` / reserved `groups` / per-user layers, deny-by-default), `GET /permissions` returning the resolved effective set for the session, and server-side enforcement of capabilities/limits/allow-lists on `/common/genai` (`ai.use`, `ai.attachImage`/`ai.attachFile`, `ai.byok`, `models`, `maxPromptChars`), `/common/extract-pdf` (`pdf.extract`, `maxUploadBytes`), `/common/api-proxy` (`api.use`, `apis`), and CRM `/data`·`/metadata`·`/attachments` (`crm.read`). No `permissions.json` ⇒ legacy (unrestricted); a present-but-broken file fails closed. Admin sessions bypass. Full model in [docs/permissions.md](docs/permissions.md).
+- **Admin permissions API** — `GET` / `PUT` / `DELETE /admin/permissions` to read, replace (validated) and remove the `permissions.json` document from an admin session; changes apply immediately (surfaced as a Permissions page in the console).
 
 ### Changed
 - PDF extraction: a detected table that under-segments its content (the words form many more columns than the ruling lines found — e.g. a holdings table detected as a 2-column currency+value strip, with names/quantities outside the cells) now falls back to word-based extraction instead of dropping the unmatched text. Recovers holdings previously lost from complex multi-column statements; verified strictly additive (no tokens lost) on the affected reports and byte-identical on the others via the baseline snapshots.

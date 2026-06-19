@@ -651,6 +651,64 @@ function resolvePermissions(type, userKeys, groups) {
 function permHas(req, cap) { return !req.permissions || req.permissions.capabilities.includes(cap); }
 function denyPerm(res, cap) { return res.status(403).json({ error: `Not authorized: ${cap}` }); }
 
+const LIMIT_KEYS = ['maxPromptChars', 'maxUploadBytes', 'genaiPerDay', 'apiPerDay'];
+
+// Persist the permissions document (admin console). Mirrors saveApiDescriptors:
+// write + refresh the in-memory cache so the new policy applies immediately.
+function savePermissionsConfig(cfg) {
+    fs.writeFileSync(PERMISSIONS_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+    permissionsConfig = cfg;
+    permissionsLoadTime = Date.now();
+    logger.info('Saved permissions to %s', PERMISSIONS_FILE);
+}
+
+// Validate one permission layer (public/authenticated/a group/a user override).
+function _validateLayer(layer, where) {
+    if (layer === null || typeof layer !== 'object' || Array.isArray(layer)) return `${where} must be an object`;
+    if (layer.capabilities !== undefined) {
+        if (!Array.isArray(layer.capabilities)) return `${where}.capabilities must be an array`;
+        for (const c of layer.capabilities) {
+            if (!ALL_CAPABILITIES.includes(c)) return `${where}.capabilities has unknown capability "${c}"`;
+        }
+    }
+    if (layer.limits !== undefined && layer.limits !== null) {
+        if (typeof layer.limits !== 'object' || Array.isArray(layer.limits)) return `${where}.limits must be an object`;
+        for (const [k, v] of Object.entries(layer.limits)) {
+            if (!LIMIT_KEYS.includes(k)) return `${where}.limits has unknown key "${k}"`;
+            if (v !== null && (typeof v !== 'number' || !Number.isFinite(v) || v < 0)) {
+                return `${where}.limits.${k} must be a non-negative number or null`;
+            }
+        }
+    }
+    for (const key of ['models', 'apis']) {
+        if (layer[key] !== undefined && (!Array.isArray(layer[key]) || layer[key].some(x => typeof x !== 'string'))) {
+            return `${where}.${key} must be an array of strings`;
+        }
+    }
+    return null;
+}
+
+// Validate the whole permissions document. Returns an error string or null.
+function validatePermissionsDoc(doc) {
+    if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) return 'permissions must be an object';
+    const allowed = ['public', 'authenticated', 'groups', 'users'];
+    for (const k of Object.keys(doc)) {
+        if (!allowed.includes(k)) return `unknown top-level key "${k}" (allowed: ${allowed.join(', ')})`;
+    }
+    for (const single of ['public', 'authenticated']) {
+        if (doc[single] != null) { const err = _validateLayer(doc[single], single); if (err) return err; }
+    }
+    for (const map of ['groups', 'users']) {
+        if (doc[map] != null) {
+            if (typeof doc[map] !== 'object' || Array.isArray(doc[map])) return `${map} must be an object`;
+            for (const [k, layer] of Object.entries(doc[map])) {
+                const err = _validateLayer(layer, `${map}["${k}"]`); if (err) return err;
+            }
+        }
+    }
+    return null;
+}
+
 // Resolves the built-in API key for a given session type.
 // apiKey forms:
 //   "key"              → available to all sessions (legacy / shorthand for { "*": "key" })
@@ -1147,6 +1205,44 @@ router.delete('/admin/api-config/:id', (req, res) => {
     descriptors.splice(idx, 1);
     saveApiDescriptors(descriptors);
     res.status(204).end();
+});
+
+// ─── Permissions (authorization) config — see docs/permissions.md ───
+// The whole document is read/written at once. `configured: false` means no
+// permissions.json exists → legacy behaviour (everyone gets full access).
+// All three verbs return the SAME shape (incl. the canonical `capabilities`
+// list) so the console can apply any response without re-fetching.
+const permissionsPayload = (configured, permissions) =>
+    ({ configured, permissions, capabilities: ALL_CAPABILITIES, limitKeys: LIMIT_KEYS });
+
+router.get('/admin/permissions', (req, res) => {
+    const configured = fs.existsSync(PERMISSIONS_FILE);
+    res.json(permissionsPayload(configured, configured ? loadPermissionsConfig() : null));
+});
+
+router.put('/admin/permissions', (req, res) => {
+    const err = validatePermissionsDoc(req.body);
+    if (err) return res.status(400).json({ error: err });
+    try {
+        savePermissionsConfig(req.body);
+    } catch (e) {
+        return res.status(500).json({ error: e.message });
+    }
+    res.json(permissionsPayload(true, req.body));
+});
+
+// Removing the file reverts to legacy "no restrictions". Destructive — the UI
+// confirms first.
+router.delete('/admin/permissions', (req, res) => {
+    try {
+        if (fs.existsSync(PERMISSIONS_FILE)) fs.unlinkSync(PERMISSIONS_FILE);
+        permissionsConfig = null;
+        permissionsLoadTime = 0;
+        logger.info('Deleted %s — reverted to legacy allow-all', PERMISSIONS_FILE);
+    } catch (e) {
+        return res.status(500).json({ error: e.message });
+    }
+    res.json(permissionsPayload(false, null));
 });
 
 router.use((err, req, res, next) => {

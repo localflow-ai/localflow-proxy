@@ -505,6 +505,16 @@ Read and manage the API descriptor list (`api-config.json`).
 
 ---
 
+#### `GET /admin/permissions` / `PUT /admin/permissions` / `DELETE /admin/permissions`
+
+Read and manage the authorization document (`permissions.json`, see [Permissions file](#permissions-file-permissionsjson)).
+
+- `GET` returns `{ configured, permissions, capabilities, limitKeys }`. `configured` is `false` when no `permissions.json` exists (legacy "everyone allowed"); `capabilities` is the canonical capability list.
+- `PUT` replaces the whole document (body = `{ public?, authenticated?, groups?, users? }`). The body is validated (known capabilities, numeric/`null` limits, string `models`/`apis`); invalid documents return `400`. Creating the file enables the feature. Applies immediately (no restart).
+- `DELETE` removes the file — reverting to the legacy "no restrictions" behavior. Returns `{ configured: false, permissions: null }`.
+
+---
+
 ## Connectors
 
 A connector encapsulates the authentication and data-access logic for a specific environment (CRM, ERP, database, etc.). All connectors extend `BaseConnector`, which provides field/type mapping, normalization helpers, and bidirectional key translation.
