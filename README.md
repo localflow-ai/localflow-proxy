@@ -398,6 +398,8 @@ Supported protocols: `gemini`, `openai` (and OpenAI-compatible endpoints), `anth
 
 The proxy maps attachments into each provider's native format (Gemini `inline_data`, OpenAI `image_url`/`file`, Anthropic `image`/`document`). **When the proxy runs with `safeMode: true`, any request carrying `attachments` is rejected with HTTP 403** — file contents never reach the LLM.
 
+A message may also carry `context: string` — machine-generated preamble (e.g. a previous run's execution trace). The proxy prepends it to that message's `content` when forwarding to the provider, but does **not** count it toward `maxPromptChars`. That limit applies to the **latest user message's `content` only** (the user's own input) — not the whole conversation, the system prompt, or `context` — so multi-turn follow-ups aren't penalised for accumulated history.
+
 ---
 
 #### `ALL /common/api-proxy`

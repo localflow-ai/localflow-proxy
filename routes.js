@@ -771,7 +771,12 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
                 return res.status(403).json({ error: `Model not allowed: ${request.modelId}` });
             }
             if (perms.limits.maxPromptChars != null) {
-                const chars = (request.messages || []).reduce((n, m) => n + (m.content ? m.content.length : 0), 0);
+                // Bound the user's own input only — the latest user message. Counting
+                // the whole payload (conversation history, the model's prior formulas,
+                // machine-generated execution traces, system prompt) would shrink the
+                // allowance every turn and 413 normal follow-ups.
+                const userMsgs = (request.messages || []).filter(m => m.role === 'user' && m.content);
+                const chars = userMsgs.length ? userMsgs[userMsgs.length - 1].content.length : 0;
                 if (chars > perms.limits.maxPromptChars) {
                     return res.status(413).json({ error: `Message exceeds the ${perms.limits.maxPromptChars}-character limit.` });
                 }
@@ -817,6 +822,13 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
     }
 }));
 
+// Text forwarded to the model for a message: machine-generated `context`
+// (e.g. a prior run's execution trace) prepended to the user's `content`.
+// `context` is forwarded but never counted against maxPromptChars (see above).
+function msgText(m) {
+    return m.context ? `${m.context}\n\n${m.content || ''}` : (m.content || '');
+}
+
 async function _proxyGemini(request, model, apiKey) {
     const modelId = model || 'gemini-3-flash-preview';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
@@ -824,7 +836,8 @@ async function _proxyGemini(request, model, apiKey) {
         system_instruction: { parts: [{ text: request.system }] },
         contents: request.messages.map(m => {
             const parts = [];
-            if (m.content) parts.push({ text: m.content });
+            const text = msgText(m);
+            if (text) parts.push({ text });
             for (const a of m.attachments || []) {
                 parts.push({ inline_data: { mime_type: a.mimeType, data: a.data } });
             }
@@ -857,9 +870,10 @@ async function _proxyOpenAI(request, model, apiKey, baseUrl) {
         messages: [
             { role: 'system', content: request.system },
             ...request.messages.map(m => {
-                if (!m.attachments || m.attachments.length === 0) return { role: m.role, content: m.content };
+                if (!m.attachments || m.attachments.length === 0) return { role: m.role, content: msgText(m) };
                 const parts = [];
-                if (m.content) parts.push({ type: 'text', text: m.content });
+                const text = msgText(m);
+                if (text) parts.push({ type: 'text', text });
                 for (const a of m.attachments) {
                     const dataUrl = `data:${a.mimeType};base64,${a.data}`;
                     if (a.mimeType.startsWith('image/')) parts.push({ type: 'image_url', image_url: { url: dataUrl } });
@@ -893,9 +907,10 @@ async function _proxyAnthropic(request, model, apiKey, baseUrl) {
         model: model || 'claude-opus-4-5',
         system: request.system,
         messages: request.messages.map(m => {
-            if (!m.attachments || m.attachments.length === 0) return { role: m.role, content: m.content };
+            if (!m.attachments || m.attachments.length === 0) return { role: m.role, content: msgText(m) };
             const blocks = [];
-            if (m.content) blocks.push({ type: 'text', text: m.content });
+            const text = msgText(m);
+            if (text) blocks.push({ type: 'text', text });
             for (const a of m.attachments) {
                 if (a.mimeType.startsWith('image/')) blocks.push({ type: 'image', source: { type: 'base64', media_type: a.mimeType, data: a.data } });
                 else if (a.mimeType === 'application/pdf') blocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } });
