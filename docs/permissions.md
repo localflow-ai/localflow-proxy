@@ -30,7 +30,7 @@ guarantees). The rest are **enforced** server-side.
 - **Enforced** — the action goes through the proxy (LLM calls, API calls, PDF
   extraction, CRM reads, sizes, quotas).
 - **Advisory** — the action is local-only or trivially bypassable (loading a local
-  CSV that stays in the browser, copy/paste, exporting a file the user can already see).
+  CSV that stays in the browser, pasting into the chat, exporting a file the user can already see).
 
 ## 3. Identity contract
 
@@ -64,7 +64,7 @@ String keys, granted as a set. Absent = denied.
 | `data.uploadOther` | Load other local files | *Advisory* | client only |
 | `analysis.runLocal` | Run a saved/existing analysis on local data (no LLM) | *Advisory* | client only (pure local execution) |
 | `analysis.share` | Export/share an analysis to a file | *Advisory* | client only (can't stop exfiltration of visible data) |
-| `chat.copyPaste` | Allow copy/paste in the chat UI | *Advisory* | client only (DLP-style deterrent) |
+| `chat.paste` | Allow pasting into the chat input | *Advisory* | client only (DLP-style deterrent; denied ⇒ paste blocked, allowed ⇒ paste warns) |
 
 Notes:
 - **PDF analysis** = `pdf.extract` (get the text) + `ai.use` (send text to the LLM). Gating

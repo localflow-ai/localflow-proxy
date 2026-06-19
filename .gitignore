@@ -12,3 +12,4 @@ tests/baselines/
 config.json
 llm-configs.json
 api-config.json
+permissions.json

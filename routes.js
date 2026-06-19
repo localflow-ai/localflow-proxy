@@ -270,7 +270,21 @@ router.use(async (req, res, next) => {
     // ---------------------------------
 
     req.session = session;
+    // Resolve the effective permission set once per request (config hot-reloads).
+    // Candidate user keys (uid, login, email…) — connectors nest identity under
+    // sessionInfo.context.user. `groups` is always [] today (future connector).
+    const si = (session.connector && session.connector.sessionInfo) || {};
+    const u = (si.context && si.context.user) || {};
+    const userKeys = [si.userId, si.username, u.email, u.login, u.name]
+        .filter(x => x != null).map(String);
+    req.permissions = (session.type === 'admin')
+        ? null  // admin bypasses capability checks
+        : resolvePermissions(session.type, userKeys, si.groups || []);
     next();
+});
+
+router.get('/permissions', (req, res) => {
+    res.json(req.permissions || EMPTY_PERMISSIONS());
 });
 
 const adminOnly = (req, res, next) => {
@@ -299,6 +313,12 @@ router.all('/common/api-proxy', express.raw({ limit: '50mb', type: '*/*' }), asy
 
     if (!dataSource) {
         return res.status(403).json({ error: 'Not allowed' });
+    }
+
+    // --- Authorization ---
+    if (!permHas(req, 'api.use')) return denyPerm(res, 'api.use');
+    if (req.permissions && !(req.permissions.apis.includes('*') || req.permissions.apis.includes(dataSource.id))) {
+        return res.status(403).json({ error: `API not allowed: ${dataSource.id}` });
     }
 
     if (dataSource.waitMs) {
@@ -563,6 +583,74 @@ function loadLlmConfigs() {
     return llmConfigs;
 }
 
+// --- Authorization / permissions (see docs/permissions.md) ----------------
+const PERMISSIONS_FILE = process.env.PERMISSIONS_FILE || path.join(__dirname, 'permissions.json');
+let permissionsConfig = null;
+let permissionsLoadTime = 0;
+
+function loadPermissionsConfig() {
+    try {
+        if (!fs.existsSync(PERMISSIONS_FILE)) return null;
+        const stats = fs.statSync(PERMISSIONS_FILE);
+        if (stats.mtimeMs > permissionsLoadTime) {
+            permissionsConfig = JSON.parse(fs.readFileSync(PERMISSIONS_FILE, 'utf8'));
+            permissionsLoadTime = stats.mtimeMs;
+            logger.info('Loaded permissions from %s', PERMISSIONS_FILE);
+        }
+    } catch (err) {
+        logger.error('Failed to load permissions: %s', err.message);
+        return null; // fail closed
+    }
+    return permissionsConfig;
+}
+
+const ALL_CAPABILITIES = [
+    'ai.use', 'ai.attachImage', 'ai.attachFile', 'ai.byok', 'pdf.extract',
+    'api.use', 'crm.read', 'data.uploadTabular', 'data.uploadOther',
+    'analysis.runLocal', 'analysis.share', 'chat.paste',
+];
+// Deny-by-default empty set (also the fail-closed result for a broken file).
+const EMPTY_PERMISSIONS = () => ({ capabilities: [], limits: { maxPromptChars: 0, maxUploadBytes: 0, genaiPerDay: 0, apiPerDay: 0 }, models: [], apis: [] });
+// Legacy/unconfigured: no permissions.json at all ⇒ no restrictions (opt-in feature).
+const ALLOW_ALL = () => ({ capabilities: [...ALL_CAPABILITIES], limits: { maxPromptChars: null, maxUploadBytes: null, genaiPerDay: null, apiPerDay: null }, models: ['*'], apis: ['*'] });
+
+// Resolve the effective permission set for a session: public | authenticated
+// base, then (future) groups, then per-user additive. Deny-by-default within a
+// configured file; permissive when no file exists; fail closed on a broken file.
+// `userKeys` is an ordered list of identifiers (uid, login/username, email…) —
+// the per-user layer matches on the first one present in `users`, so admins can
+// key by whichever is convenient (e.g. an email).
+function resolvePermissions(type, userKeys, groups) {
+    if (!fs.existsSync(PERMISSIONS_FILE)) return ALLOW_ALL();   // feature not configured → legacy behavior
+    const cfg = loadPermissionsConfig();
+    if (!cfg) return EMPTY_PERMISSIONS();
+
+    const layers = [];
+    const base = type === 'public' ? cfg.public : cfg.authenticated;
+    if (base) layers.push(base);
+    for (const g of (groups || [])) { if (cfg.groups && cfg.groups[g]) layers.push(cfg.groups[g]); }
+    if (type !== 'public' && cfg.users) {
+        for (const k of (userKeys || [])) { if (cfg.users[k]) { layers.push(cfg.users[k]); break; } }
+    }
+
+    const eff = EMPTY_PERMISSIONS();
+    const caps = new Set(), models = new Set(), apis = new Set();
+    for (const layer of layers) {
+        (layer.capabilities || []).forEach(c => caps.add(c));
+        if (layer.limits) eff.limits = { ...eff.limits, ...layer.limits }; // most-specific wins
+        (layer.models || []).forEach(m => models.add(m));
+        (layer.apis || []).forEach(a => apis.add(a));
+    }
+    eff.capabilities = [...caps];
+    eff.models = [...models];
+    eff.apis = [...apis];
+    return eff;
+}
+
+// null req.permissions = admin session → bypass all capability checks.
+function permHas(req, cap) { return !req.permissions || req.permissions.capabilities.includes(cap); }
+function denyPerm(res, cap) { return res.status(403).json({ error: `Not authorized: ${cap}` }); }
+
 // Resolves the built-in API key for a given session type.
 // apiKey forms:
 //   "key"              → available to all sessions (legacy / shorthand for { "*": "key" })
@@ -608,6 +696,28 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
             && Array.isArray(request.messages)
             && request.messages.some(m => Array.isArray(m.attachments) && m.attachments.length > 0)) {
             return res.status(403).json({ error: 'Attachments are not allowed: this proxy runs in safe mode (data stays local).' });
+        }
+
+        // --- Authorization (see docs/permissions.md) ---
+        const perms = req.permissions;   // null for admin = bypass
+        if (!permHas(req, 'ai.use')) return denyPerm(res, 'ai.use');
+        if (perms) {
+            const atts = (request.messages || []).flatMap(m => Array.isArray(m.attachments) ? m.attachments : []);
+            for (const a of atts) {
+                const isImage = String(a.mimeType || '').startsWith('image/');
+                if (isImage && !permHas(req, 'ai.attachImage')) return denyPerm(res, 'ai.attachImage');
+                if (!isImage && !permHas(req, 'ai.attachFile')) return denyPerm(res, 'ai.attachFile');
+            }
+            if (request.apiKey && !permHas(req, 'ai.byok')) return denyPerm(res, 'ai.byok');
+            if (request.modelId && !(perms.models.includes('*') || perms.models.includes(request.modelId))) {
+                return res.status(403).json({ error: `Model not allowed: ${request.modelId}` });
+            }
+            if (perms.limits.maxPromptChars != null) {
+                const chars = (request.messages || []).reduce((n, m) => n + (m.content ? m.content.length : 0), 0);
+                if (chars > perms.limits.maxPromptChars) {
+                    return res.status(413).json({ error: `Message exceeds the ${perms.limits.maxPromptChars}-character limit.` });
+                }
+            }
         }
 
         let protocol, model, apiKey, baseUrl;
@@ -800,6 +910,9 @@ router.post('/common/extract-pdf', throttler,
         }
     },
     asyncHandler(async (req, res) => {
+    // --- Authorization ---
+    if (!permHas(req, 'pdf.extract')) return denyPerm(res, 'pdf.extract');
+
     const ct = req.headers['content-type'] || '';
     const isBinaryUpload = ct.includes('application/pdf') || ct.includes('application/octet-stream');
 
@@ -809,6 +922,9 @@ router.post('/common/extract-pdf', throttler,
     if (isBinaryUpload) {
         if (!req.body || !req.body.length) return res.status(400).json({ error: 'Missing PDF file in request body' });
         buffer = req.body;
+        if (req.permissions && req.permissions.limits.maxUploadBytes != null && buffer.length > req.permissions.limits.maxUploadBytes) {
+            return res.status(413).json({ error: `File exceeds the ${req.permissions.limits.maxUploadBytes}-byte limit.` });
+        }
         searchString = req.query.searchString;
     } else {
         const { url, searchString: bodySearchString } = req.body;
@@ -885,6 +1001,12 @@ router.get('/common/extract-pdf/status', (req, res) => {
             queueLimit: 50
         }
     });
+});
+
+// CRM/ERP data access requires the crm.read capability (see docs/permissions.md).
+router.use(['/metadata', '/data', '/attachments'], (req, res, next) => {
+    if (!permHas(req, 'crm.read')) return denyPerm(res, 'crm.read');
+    next();
 });
 
 router.get('/metadata', asyncHandler(async (req, res) => {

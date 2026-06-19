@@ -1,0 +1,28 @@
+{
+  "public": {
+    "capabilities": ["ai.use", "data.uploadTabular", "analysis.runLocal", "api.use"],
+    "limits": { "maxPromptChars": 4000, "maxUploadBytes": 5242880, "genaiPerDay": 50, "apiPerDay": 500 },
+    "models": ["*"],
+    "apis": ["*"]
+  },
+  "authenticated": {
+    "capabilities": [
+      "ai.use", "ai.attachImage", "pdf.extract",
+      "api.use", "crm.read",
+      "data.uploadTabular", "data.uploadOther",
+      "analysis.runLocal", "analysis.share", "chat.paste"
+    ],
+    "limits": { "maxPromptChars": 16000, "maxUploadBytes": 26214400, "genaiPerDay": 500, "apiPerDay": 5000 },
+    "models": ["*"],
+    "apis": ["*"]
+  },
+
+  "groups": {},
+
+  "users": {
+    "alice@example.org": {
+      "capabilities": ["ai.attachFile", "ai.byok"],
+      "limits": { "maxPromptChars": null }
+    }
+  }
+}

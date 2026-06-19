@@ -218,6 +218,10 @@ The proxy loads `.env` first, then `.env.local` (which overrides any duplicate k
 
 BYOK (an encrypted key sent by the client) always takes precedence over the server-side key.
 
+### Permissions file (`permissions.json`)
+
+Per-org authorization: which capabilities, limits, and model/API allow-lists apply per session, with `public` / `authenticated` / per-user layers (deny-by-default within the file). Hot-reloaded like the others. **If the file is absent, the proxy applies no restrictions (legacy behavior); add it to enforce.** A present-but-unparseable file fails closed. The proxy serves the resolved set at `GET /permissions` and enforces it on `genai` / `extract-pdf` / `api-proxy` / `data`. See **[docs/permissions.md](docs/permissions.md)** for the full model and **[permissions.example.json](permissions.example.json)** for a starting point.
+
 ### API descriptor file (`api-config.json`)
 
 The `api-config.json` file defines which external APIs analysis formulas are allowed to call through the `/common/api-proxy` endpoint. **Do not edit `api-config.json` directly** — it is auto-generated. Edit `scripts/build-api-config.js` instead, then run:
@@ -277,7 +281,22 @@ Create a new session by authenticating against a CRM/ERP connector.
 
 #### `GET /session`
 
-Verify the current session and retrieve context (user info, permissions, connector configuration).
+Verify the current session and retrieve context (user info, connector configuration).
+
+---
+
+#### `GET /permissions`
+
+Returns the **resolved authorization set** for the current session (capabilities, limits, model/API allow-lists), computed from `permissions.json`. Clients gate their UI from this; the proxy enforces it independently on the relevant endpoints. See [docs/permissions.md](docs/permissions.md).
+
+```json
+{
+  "capabilities": ["ai.use", "data.uploadTabular", "api.use", "analysis.runLocal"],
+  "limits": { "maxPromptChars": 50000, "maxUploadBytes": 26214400, "genaiPerDay": null, "apiPerDay": null },
+  "models": ["*"],
+  "apis": ["*"]
+}
+```
 
 ---
 
