@@ -1,0 +1,348 @@
+[
+  {
+    "name": "OverPass",
+    "topic": "Spatial analysis",
+    "id": "overpass",
+    "baseUrl": "https://overpass-api.de/api/interpreter",
+    "apiKeyRoutePlaceholder": "{apiKey}",
+    "rewriteRules": [
+      [
+        "replace",
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.geofabrik.de/{apiKey}/api/interpreter"
+      ]
+    ],
+    "force": true,
+    "description": "OpenStreetMap's OverPass API allows to access most data that can be put on a map worldwide. For example: roads, forests, buildings, rivers, lakes, infrastructures, ...",
+    "prompt": "Use OpenStreetMap's OverPass API (*HIGHLY PREFERED*) and Turf.js (available in `turf`). Example: find closest rivers and calculate distance. When using Overpass, remember the BBOX order is (south, west, north, east)."
+  },
+  {
+    "name": "OSRM",
+    "topic": "Routing",
+    "id": "osrm",
+    "baseUrl": [
+      "https://routing.openstreetmap.de",
+      "https://router.project-osrm.org"
+    ],
+    "apiKeyRoutePlaceholder": "{apiKey}",
+    "rewriteRules": [
+      [
+        "replace",
+        "https://routing.openstreetmap.de/routed-car/route/",
+        "https://routing.geofabrik.de/{apiKey}/route/",
+        "replace",
+        "https://router.project-osrm.org/routed-car/route/",
+        "https://routing.geofabrik.de/{apiKey}/route/",
+        "replace",
+        "https://routing.openstreetmap.de/",
+        "https://routing.geofabrik.de/{apiKey}/",
+        "replace",
+        "https://router.project-osrm.org",
+        "https://routing.geofabrik.de/{apiKey}/"
+      ]
+    ],
+    "force": true,
+    "prompt": "Use OSRM to calculate distance and time by transportation. The base url is `https://routing.openstreetmap.de`.",
+    "description": "OSRM is the Open Source engine for routing. It can be used to calculate itineraries or find the distance and time between two points by any transportation means."
+  },
+  {
+    "name": "IGN Geoplateforme",
+    "topic": "Advanced French GIS",
+    "id": "ign",
+    "waitMs": "100",
+    "baseUrl": [
+      "https://data.geopf.fr/geocodage/search",
+      "https://data.geopf.fr/geocodage/reverse",
+      "https://data.geopf.fr/altimetrie/v1/elevation",
+      "https://data.geopf.fr/navigation/itineraire",
+      "https://data.geopf.fr/wfs/ows",
+      "https://wfs.geoportail-urbanisme.gouv.fr/wfs",
+      "https://api-adresse.data.gouv.fr/search",
+      "https://api-adresse.data.gouv.fr/reverse"
+    ],
+    "rewriteRules": [
+      [
+        "replace",
+        "https://api-adresse.data.gouv.fr/search",
+        "https://data.geopf.fr/geocodage/search",
+        "replace",
+        "https://api-adresse.data.gouv.fr/reverse",
+        "https://data.geopf.fr/geocodage/reverse",
+        "replace",
+        "https://wfs.geoportail-urbanisme.gouv.fr/wfs",
+        "https://data.geopf.fr/wfs/ows"
+      ]
+    ],
+    "description": "This is the primary hub for French public geographic data. It provides access to:\n        - **Geocoding & Search**: Convert text addresses or POIs into coordinates.\n        - **Reverse Geocoding**: Find addresses or cadastral parcels near a GPS point.\n        - **WFS Vector Layers**: Access official databases for Cadastre (parcels), Urban Planning (PLU), Hydrography, and Forestry.\n        - **Altimetry**: Get precise ground elevation (Z) for coordinates.\n        - **Routing**: Calculate itineraries for cars, pedestrians, or emergency vehicles.",
+    "prompt": "When using the IGN Geoplateforme, choose the sub-route based on the specific intent:\n\n| Path | Endpoint | Parameters | Schema |\n| :--- | :--- | :--- | :--- |\n| /geocodage/search | Geocoding (Text to GPS) | q, index (address, poi, parcel), limit, postcode, type (housenumber, street, locality, municipality) | GeoJSONFC |\n| /geocodage/reverse | Reverse Geocoding | lat, lon, index (address, poi, parcel), limit, search_radius | GeoJSONFC |\n| /wfs/ows | Vector Data (WFS) | SERVICE=WFS, VERSION=2.0.0, REQUEST=GetFeature, TYPENAMES, BBOX, OUTPUTFORMAT=application/json | GeoJSONFC |\n| /altimetrie/v1/elevation | Elevation (Z) | lon, lat, resource (ign_rge_alti_wld), delimiter, indent | ElevationRes |\n| /navigation/itineraire | Routing (Itinerary) | start, end, resource (bdtopo-osrm, bdtopo-valhalla), profile (car, pedestrian), optimization (fastest, shortest), getSteps, getGeometry | RoutingRes |\n\nAvailable WFS layers to be used in the TYPENAMES param include (*IMPORTANT*: do not try other types unless given to you by the user):\n* `CADASTRALPARCELS.PARCELLAIRE_EXPRESS:parcelle` : parcelles. Example for properties in returned features: {\"gid\":77759101,\"numero\":\"0067\",\"feuille\":1,\"section\":\"AW\",\"code_dep\":\"14\",\"nom_com\":\"Lisieux\",\"code_com\":\"366\",\"com_abs\":\"000\",\"code_arr\":\"000\",\"idu\":\"14366000AW0067\",\"contenance\":112,\"code_insee\":\"14366\"},\n* `wfs_du:zone_urba` : Plan Local d'Urbanisme (PLU). Example for properties in returned features: {\"gid\":3106227,\"gpu_doc_id\":\"426a9c9d28a6850c0f9dacea82896315\",\"gpu_status\":\"production\",\"gpu_timestamp\":\"2025-10-03T06:26:39.185Z\",\"partition\":\"DU_200069532_C\",\"libelle\":\"UE\",\"libelong\":\"pavillonnaire diffus\",\"typezone\":\"U\",\"destdomi\":null,\"nomfic\":\"200069532_reglement_20250327_C.pdf\"},\n* `BDTOPO_V3:foret_publique`, \n* `BDCARTO_V5:construction_surfacique`, \n* `BDCARTO_V5:occupation_du_sol`, \n* `BDCARTO_V5:rond_point`, \n* `BDCARTO_V5:transport_par_cable`, \n* `BDCARTO_V5:zone_d_activite_ou_d_interet`, \n* `BDCARTO_V5:zone_d_habitation`, \n* `LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape`, \n* `PROTECTEDAREAS.APB:apb` : arrêtés de protection de biotope,\n* `patrinat_ramsar:pnm` : zone humide d'importance internationale (Ramsar),\n* `BDTOPO_V3:terrain_de_sport`, \n* `BDTOPO_V3:zone_de_vegetation`\n* `MESURES_COMPENSATOIRES:emprises_commune` (mesures compensatoires des atteintes a la biodiversite)\n* `MESURES_COMPENSATOIRES:emprises_lineaires` (mesures compensatoires des atteintes a la biodiversite)\n* `MESURES_COMPENSATOIRES:emprises_polygones` (mesures compensatoires des atteintes a la biodiversite)\n* `MESURES_COMPENSATOIRES:emprises_ponctuelles` (mesures compensatoires des atteintes a la biodiversite)\n* `wfs_sup:assiette_sup_s` servitudes d'utilité publiques (surfaces),\n* `wfs_sup:assiette_sup_p` servitudes d'utilité publiques (ponctuelles),\n* `wfs_sup:assiette_sup_l` servitudes d'utilité publiques (linéaires),\n* `patrinat_pnr:pnr` parc naturel régional (PNR)`,\n* `essai_gpkg_raster_v2_gpkg_03-02-2025_wfs:composantes_de_la_trame_verte_nsm` (trame verte et bleue, ZNIEFF 1 et ZNIEFF 2)\n\nIMPORTANT: \nALWAYS use the following template that works for all layers when calling the WFS endpoint, keep the explicit EPSG:4326 coordinate system, and replace the TYPENAMES and BBOX parameters:\n`https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=patrinat_pnr:pnr&BBOX=45.1,-1.28,49.18,1.28,urn:ogc:def:crs:EPSG::4326&SRSNAME=urn:ogc:def:crs:EPSG::4326&OUTPUTFORMAT=application/json`\n\n- Coordinate Order: Geocoding and WFS GeoJSON return [Longitude, Latitude]. \n- WFS BBOX is [LatMin, LonMin, LatMax, LonMax]\n- Parameter naming: Use `lon` for geocoding/elevation and `lon,lat` strings for routing.\n\n### Response Schemas\n```typescript\n// Standard GeoJSON FeatureCollection used by Geocoding and WFS\ninterface GeoJSONFC {\n  type: \"FeatureCollection\";\n  features: Array<{\n    type: \"Feature\";\n    geometry: { type: \"Point\" | \"Polygon\" | \"MultiPolygon\"; coordinates: any };\n    properties: Record<string, any>; // label, city, postcode, idu (for parcels)\n  }>;\n}\n\n// Elevation Response\ninterface ElevationRes {\n  elevations: Array<{ lon: number; lat: number; z: number; acc: number }>;\n}\n\n// Routing Response\ninterface RoutingRes {\n  geometry: { type: \"LineString\"; coordinates: [number, number][] };\n  distance: number; // in meters\n  duration: number; // in seconds\n  portion: Array<{ distance: number; duration: number; steps: any[] }>;\n}\n```\n\n### Examples\n\nFor WFS, call `https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=wfs_sup:assiette_sup_s&BBOX=49.10,0.18,49.18,0.28&&OUTPUTFORMAT=application/json` and replace the type and bounding box parameters.\n"
+  },
+  {
+    "topic": "Routing",
+    "name": "IGN Isochrone",
+    "id": "ign-isochrone",
+    "waitMs": "100",
+    "baseUrl": [
+      "https://data.geopf.fr/navigation/isochrone"
+    ],
+    "description": "Calculates isochrones (areas reachable within a given time) or isodistances (areas reachable within a given distance) across France using OSRM or Valhalla engines.",
+    "prompt": "To calculate an accessibility zone (isochrone/isodistance) in France, use the endpoint `https://data.geopf.fr/navigation/isochrone`.\n\n### REQUIRED PARAMETERS\n- **point**: Starting coordinates formatted as `longitude,latitude` (e.g., `2.3373,48.8493`).\n- **resource**: Always use `bdtopo-valhalla`.\n- **costType**: `time` (for isochrone) or `distance` (for isodistance).\n- **costValue**: Numeric value for the cost (e.g., 600 for 10 minutes if timeUnit is seconds).\n\n### RECOMMENDED PARAMETERS\n- **profile**: `car`, `pedestrian`.\n- **direction**: `departure` (from point) or `arrival` (to point).\n- **timeUnit**: `minute`, `second`, or `hour`.\n- **distanceUnit**: `meter` or `kilometer`.\n\n### RESPONSE STRUCTURE\nThe API returns a JSON object containing a GeoJSON 'Polygon' geometry. Use this TypeScript interface:\n\n```typescript\ninterface IGNIsochroneResponse {\n    point: string;              // \"lon,lat\"\n    resource: string;           // e.g., \"bdtopo-valhalla\"\n    resourceVersion: string;    // e.g., \"2026-03-13\"\n    costType: \"time\" | \"distance\";\n    costValue: number;\n    timeUnit?: string;\n    distanceUnit?: string;\n    profile: string;\n    direction: string;\n    geometry: {\n        type: \"Polygon\";\n        coordinates: Array<Array<[number, number]>>; // Array of [Lon, Lat] pairs\n    };\n    constraints: any[];\n}\n```\n\n*IMPORTANT*: When processing the `geometry.coordinates`, remember that the first array level represents the polygon, and the second level is the list of points. Each point is `[longitude, latitude]`."
+  },
+  {
+    "name": "APICarto",
+    "topic": "Advanced",
+    "id": "apicarto",
+    "waitMs": "100",
+    "baseUrl": "https://apicarto.ign.fr/api",
+    "description": "\nThe Carto API is an IGN OpenData API.\n\n### Available modules:\n\n| Module | Description | Link |\n| :--- | :--- | :--- |\n| **Cadastre** | Access to cadastral data (municipality, division, plot/parcel, etc.). | [API Documentation](./cadastre) |\n| **Administrative Boundaries** | Retrieval of administrative data (municipality, department, region). | [API Documentation](./limites-administratives) |\n| **Postcodes** | Retrieval of municipalities based on a postcode. | [API Documentation](./codes-postaux) |\n| **Urban Planning (GpU)** | Access to Urban Planning Geoportail data (PLU, POS, CC, SUP). | [API Documentation](./gpu) |\n| **RPG** | Access to Graphical Parcel Register data (crops/agriculture). | [API Documentation](./rpg) |\n| **WFS-Geoportail** | Generic access to any Geoportail WFS feed. | [API Documentation](./wfs-geoportail) |\n| **Nature** | Access to feeds based on MNHN (National Museum of Natural History) data. | [API Documentation](./nature) |\n| **AOC** | Access to Controlled Appellation of Origin (AOC) data. | [API Documentation](./aoc) |\n        ",
+    "prompt": "For France and specific government data, use the APICarto API (https://apicarto.ign.fr/api) with the appropriate module (cadastre, limites-administratives, codes-postaux, gpu, rpg, wfs-geoportail, nature, aoc). Each module API is available at https://apicarto.ign.fr/api/{module} and documented at https://apicarto.ign.fr/api/doc/{module}."
+  },
+  {
+    "topic": "Elevation",
+    "name": "Open Meteo Elevation",
+    "id": "elevation",
+    "baseUrl": "https://api.open-meteo.com/v1/elevation",
+    "apiKeyRoutePlaceholder": "{apiKey}",
+    "rewriteRules": [
+      [
+        "replace",
+        "https://api.open-meteo.com/v1/elevation?",
+        "https://customer-api.open-meteo.com/v1/elevation?apikey={apiKey}&"
+      ]
+    ],
+    "force": true,
+    "description": "Open Meteo Elevation is a service to get the elevation worldwide.",
+    "prompt": "Use Open Meteo Elevation API (available at `https://api.open-meteo.com/v1/elevation`) when the analysis requires elevation on many objets. Example: show topology around a point."
+  },
+  {
+    "topic": "Environmental Risks",
+    "name": "Géorisques V1",
+    "id": "georisques-v1",
+    "waitMs": "200",
+    "baseUrl": [
+      "https://www.georisques.gouv.fr/api/v1"
+    ],
+    "rewriteRules": [],
+    "description": "Legacy French Géorisques V1 API. It provides established endpoints for risk assessment, including the unique consolidated \"risques/details\" summary.",
+    "prompt": "To use the Géorisques V1 API, append the specific module path to the base URL (`https://www.georisques.gouv.fr/api/v1`). \n\n**Pagination:** Response structures vary; data is often in a `data` property or at root. Params: page (starts at 1), page_size (max 100).\n**Rules:** Use snake_case for params (e.g., code_insee, page_size). Spatial queries use a `latlon` parameter which is a string of \"longitude, latitude\" (IT IS REVERSED, yes). Max rayon = 10000 (in meters).\n\n| Path | Endpoint | Parameters |\n| :--- | :--- | :--- | :--- |\n| /gaspar/risques | Full Risk Summary | code_insee, latlon, rayon, page, page_size |\n| /gaspar/catnat | Natural Disasters | code_insee, latlon, rayon, page, page_size |\n| /installations_classees | Industrial Sites | departement, region, page, page_size |\n| /installations_nucleaires | Nuclear Sites | code_insee, latitude, longitude |\n| /ssp | Polluted Soils (SSP) | code_insee, latlon, rayon, page, page_size |\n| /old | Obligations Légales de Débroussaillement | code_insee, latlon |\n| /mvt | Landslides | code_insee, latlon, rayon, page, region, departement, type (\"Effondrement / Affaissement\", \"Coulée\", \"Glissement\", \"Erosion de berges\", \"Chute de blocs / Eboulement\"), page, page_size |\n| /cavites | Underground Cavities | code_insee, latlon, rayon, region, departement, identifiant, type (Cave, Naturelle, Indéterminé, Ouvrage civil, Puits, Divers, Galerie, Carrière, Indice, Ouvrage militaire, Réseau galeries, Souterrain), page, page_size |\n| /gaspar/azi | Inundation - AZI Program | code_insee, latlon, rayon, page, page_size |\n| /radon | Radon Risk | code_insee, page, page_size |\n| /dicrim | Prevention Docs | code_insee, latlon, rayon, page, page_size |\n"
+  },
+  {
+    "topic": "Environmental Risks",
+    "name": "Géorisques V2",
+    "id": "georisques-v2",
+    "apiKeyHeader": "Authorization",
+    "waitMs": "200",
+    "baseUrl": [
+      "https://www.georisques.gouv.fr/api/v2"
+    ],
+    "rewriteRules": [],
+    "description": "Access to the comprehensive French Géorisques V2 database. This version offers granular access to specific risk themes:\n        - **Inundation**: AZI, TRI, and PAPI programs.\n        - **Ground & Soil**: Clay swelling (RGA), landslides (MVT), and cavities.\n        - **Technological & Industrial**: Classified installations (ICPE), nuclear sites, and polluted soils (SSP/BASOL).\n        - **Planning & Regulation**: Detailed PPR (Natural, Technological, Mining) and DICRIM documents.\n        - **Natural Hazards**: Seismic zoning and Radon potential.",
+    "prompt": "To use the Géorisques V2 API, append the specific module path to the base URL (`https://www.georisques.gouv.fr/api/v2`). \n\n**Pagination:** Data is in .content[]. Params: page (starts at 1), pageSize (max 100).\n**Rules:** Use camelCase for params (e.g., codeInsee, pageSize). Max rayon = 10000.\n\n| Path | Endpoint | Parameters | Schema |\n| :--- | :--- | :--- | :--- |\n| /gaspar/risques | Risk Dictionary | page, pageSize | RiskDict |\n| /installations_classees | Industrial Sites (ICPE) | codeInsee, lat, lon, rayon, page, pageSize, raisonSociale, siret, etatActivite, codeNaf, statutSeveso, bovins, porcs, volailles, carriere, eolienne, industrie, prioriteNationale, ied | ICPE |\n| /rga | Clay Swelling (RGA) | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | RGA |\n| /zonage_sismique | Seismic Zoning | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Seisme |\n| /radon | Radon Gas Potential | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Radon |\n| /mvt | Landslides History | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | MVT |\n| /cavites | Underground Cavities | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | Cavite |\n| /ssp | Polluted Soils (SSP) | codeInsee, lat, lon, rayon, geometry, codesParcelle, page, pageSize | SSP |\n| /gaspar/pprn | Natural Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/pprt | Tech Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/pprm | Mining Risk Plans | codeInsee, libPpr, etatProcedure, page, pageSize | PPR |\n| /gaspar/azi | Flood Zone Atlas | codeInsee, page, pageSize | AZI |\n| /gaspar/tri | Flood Risk Territory | codeInsee, page, pageSize | TRI |\n\n### Response Schemas\n```typescript\ninterface Paginated<T> { totalElements: number; content: T[]; }\ninterface RiskDict { code_risque: string; libelle_risque: string; }\ninterface ICPE { codeAIOT: string; raisonSociale: string; etatActivite: string; latitude: number; longitude: number; statutSeveso: string; codeInsee: string; commune: string; siret: string; regime: string; }\ninterface RGA { codeInsee: string; commune: string; classe_exposition: \"Fort\"|\"Moyen\"|\"Faible\"|\"Nul\"; }\ninterface Seisme { codeInsee: string; zone: string; libelle: string; }\ninterface Radon { codeInsee: string; classe_potentiel: number; }\ninterface MVT { id_mvt: string; libelle_mvt: string; date_evenement: string; latitude: number; longitude: number; }\ninterface Cavite { id_cavite: string; libelle_cavite: string; type_cavite: string; latitude: number; longitude: number; }\ninterface SSP { id_ssp: string; nomEtablissement: string; typeFiche: \"CASIAS\"|\"SIS\"|\"SUP\"; codeInsee: string; latitude: number; longitude: number; }\ninterface PPR { idGaspar: string; libPpr: string; etatProcedure: string; zonageReglementaire: { listTypeReg: Array<{ code: string; libelle: string; nom: string }> }; }\n```\n"
+  },
+  {
+    "topic": "Urbanisme et Environnement",
+    "name": "Cerema Cartofriches (Preprod)",
+    "id": "cerema-cartofriches-preprod",
+    "waitMs": 500,
+    "baseUrl": "https://apidf-preprod.cerema.fr",
+    "description": "Inventaire national des friches (industrielles, commerciales, habitat) via le portail Datafoncier du Cerema.",
+    "prompt": "Use GET https://apidf-preprod.cerema.fr/cartofriches/friches/?code_insee={code_insee}&coddep={coddep}&in_bbox={min_lon},{min_lat},{max_lon},{max_lat}. \nImportant: You must provide all geographical filters (code_insee, coddep, an in_bbox).\nOther available query parameters are:\n- ordering (string): Which field to use when ordering the results.\n- page (integer): A page number within the paginated result set.\n- page_size (integer): Number of results to return per page.\n- surface_max (number): Surface maximale de l'unité foncière\n- surface_min (number): Surface minimale de l'unité foncière\n- urba_zone_type (string): Type de zone d'urbanisme\n\n### Response example:\n```json\n{\n  \"count\": 13,\n  \"next\": null,\n  \"previous\": null,\n  \"results\": [\n    {\n      \"site_id\": \"14258_26849\",\n      \"site_nom\": \"Ancien Leader Price\",\n      \"site_type\": \"friche commerciale\",\n      \"site_adresse\": null,\n      \"site_statut\": \"friche avec projet\",\n      \"comm_nom\": \"Falaise\",\n      \"comm_insee\": \"14258\",\n      \"dep\": \"14\",\n      \"proprio_personne\": \"personne morale\",\n      \"unite_fonciere_surface\": 10592.338839733191,\n      \"unite_fonciere_refcad\": \"['14258000BN0415', '14258000BN0414']\",\n      \"source_nom\": \"EPF Normandie\",\n      \"nature\": \"observatoire local\",\n      \"urba_zone_type\": \"U\"\n    },\n    ...\n  ]\n}\n```\n"
+  },
+  {
+    "topic": "Photovoltaic Data",
+    "name": "PVGIS (Photovoltaic Geographical Information System)",
+    "id": "pvgis",
+    "waitMs": "500",
+    "baseUrl": [
+      "https://re.jrc.ec.europa.eu/api"
+    ],
+    "description": "PVGIS (Photovoltaic Geographical Information System), a service provided by the Joint Research Centre (JRC) of the European Commission.",
+    "prompt": "Use PVGIS to get photovoltaic data. Available endpoints are documented at https://re.jrc.ec.europa.eu/api/v5_2/\nHere is the data structure returned by PVGIS for a typical request:\n```typescript\ninterface PVGISData {\n  inputs: {\n    location: {\n      latitude: number;\n      longitude: number;\n      elevation: number;\n    };\n    meteo_data: {\n      radiation_db: string;\n      meteo_db: string;\n      year_min: number;\n      year_max: number;\n      use_horizon: boolean;\n      horizon_db: string;\n    };\n    mounting_system: {\n      fixed: {\n        slope: { value: number; optimal: boolean };\n        azimuth: { value: number; optimal: boolean };\n        type: string;\n      };\n    };\n    pv_module: {\n      technology: string;\n      peak_power: number;\n      system_loss: number;\n    };\n    economic_data: {\n      system_cost: number | null;\n      interest: number | null;\n      lifetime: number | null;\n    };\n  };\n  outputs: {\n    monthly: {\n      fixed: Array<{\n        month: number;\n        E_d: number;    // Average daily energy production (kWh/d)\n        E_m: number;    // Average monthly energy production (kWh/mo)\n        \"H(i)_d\": number; // Average daily global irradiation (kWh/m2/d)\n        \"H(i)_m\": number; // Average monthly global irradiation (kWh/m2/mo)\n        SD_m: number;   // Standard deviation of monthly production\n      }>;\n    };\n    totals: {\n      fixed: {\n        E_d: number;\n        E_m: number;\n        E_y: number;    // Average annual energy production (kWh/y)\n        \"H(i)_d\": number;\n        \"H(i)_m\": number;\n        \"H(i)_y\": number;\n        SD_m: number;\n        SD_y: number;\n        l_aoi: number;   // Angle of incidence loss (%)\n        l_spec: string | number; // Spectral loss (%) - Note: sometimes returned as string\n        l_tg: number;    // Temp/Irradiance loss (%)\n        l_total: number; // Total system loss (%)\n      };\n    };\n  };\n  meta: Record<string, any>; // Documentation metadata\n}```\n        "
+  },
+  {
+    "topic": "Administrative Boundaries",
+    "name": "French Administrative Boundaries (geo.api.gouv.fr)",
+    "id": "geo-api-gouv-fr",
+    "waitMs": "100",
+    "baseUrl": "https://geo.api.gouv.fr/",
+    "description": "Get French administrative boundaries for communes, departments, regions, etc.",
+    "prompt": "To get French administrative boundaries, use the https://geo.api.gouv.fr/ endpoints."
+  },
+  {
+    "topic": "Demographics & Local Stats",
+    "name": "INSEE Melodi",
+    "id": "insee-melodi",
+    "waitMs": "500",
+    "baseUrl": "https://api.insee.fr/melodi",
+    "apiKeyHeader": "Authorization",
+    "description": "Socio-economic data at the local level: population density, age brackets, housing types, business and employment stats by city or area.",
+    "prompt": "Use the INSEE Melodi API at `https://api.insee.fr/melodi` to retrieve demographic statistics for specific French territories.\n\n### Examples:\n\n- **Avialable datasets**: `https://api.insee.fr/melodi/V2/catalog/all`\n- **Population data**: `https://api.insee.fr/melodi/data/DS_POPULATIONS_REFERENCE?GEO=DEP-44`\n- **Business creations**: `https://api.insee.fr/melodi/data/DS_SIDE_CREA_ENT_SERIES?TIME_PERIOD=2023`\n\n### Vibe coding process:\nIf your query does not work, provide the user with a list of available datasets and their codes from `/melodi/V2/catalog/all` and ask them to choose the correct one for their query.\n"
+  },
+  {
+    "topic": "Macro-economic Indicators",
+    "name": "INSEE BDM (Economic Series)",
+    "id": "insee-bdm",
+    "waitMs": "500",
+    "baseUrl": "https://api.insee.fr/series/BDM",
+    "apiKeyHeader": "Authorization",
+    "description": "Time-series data for the French economy. Includes the Consumer Price Index (Inflation), GDP growth, and construction cost indices.",
+    "prompt": "Use `https://api.insee.fr/series/BDM` to query economic indices and time series data via the INSEE BDM endpoints.\n        \n### Example Queries:\n**Series Catalog**: `https://api.insee.fr/series/BDM/V1/dataflow/all` (to find available series and their codes).\n**Price Index (Inflation)**: `https://api.insee.fr/series/BDM/V1/data/SERIES_BDM/001763119`\n\n### Result structure:\nDo not pass any accept headers. The API always returns SDMX-ML formatted XML.\n\n### Vibe coding process:\nIf your query does not work, provide the user with a list of available series and their codes from `/series/BDM/V1/dataflow/all` and ask them to choose the correct one for their query.\n        "
+  },
+  {
+    "topic": "Non-Profit Data",
+    "name": "French National Association Register (RNA)",
+    "id": "api-rna",
+    "waitMs": "200",
+    "baseUrl": "https://entreprise.data.gouv.fr/api/rna/v1",
+    "description": "The primary source for French non-profit organizations (Associations). Use this for entities that do not appear in the Sirene register.",
+    "prompt": "To get data on a French association, query the RNA ID at https://entreprise.data.gouv.fr/api/rna/v1/id/{id}."
+  },
+  {
+    "topic": "Enterprise Data (France)",
+    "name": "Recherche Entreprises",
+    "id": "recherche-entreprises",
+    "waitMs": 500,
+    "baseUrl": "https://recherche-entreprises.api.gouv.fr",
+    "description": "Official French aggregator (Sirene + RNE + Labels). Best for search companies and company leader names.",
+    "prompt": "Use `https://recherche-entreprises.api.gouv.fr/search?q={query}` for a textual search without location constraints. `lat` and `long` parameters are *not* allowed for this endpoint.\n        \nUse `https://recherche-entreprises.api.gouv.fr/near_point?lat={lat}&long={long}&radius={radius}` for a location-based search where radius is in kilometers (default 5, max 50). A query parameter is *not* allowed for this endpoint.\n\nAdditional (optional) parameters for both endpoints are:\n- `activite_principale`: Code NAF exact (ex: 41.20Z)\n- `tranche_effectif_salarie`: Tranche INSEE (ex: 21 pour 50 à 99 salariés)\n- `categorie_entreprise`: PME, ETI, GE (comma-separated if multiple)\n- `code_postal`: Filter by one or more postal codes (comma-separated).\n- `code_commune`: Filter by one or more city INSEE codes (comma-separated).\n- `departement`: Filter by one or more department codes (comma-separated).\n- `region`: Filter by one or more region codes (comma-separated).\n- `egapro_renseignee`: Filter by companies with or without EGAPRO information.\n- `est_achats_responsables`: Filter for companies with responsible purchasing practices.\n- `est_alim_confiance`: Filter for companies with the \"Alimentation Confiance\" label.\n- `est_association`: Filter for companies with the \"Association\" label.\n- `est_bio`: Filter for companies with the \"Bio\" label.\n- `est_collectivite_territoriale`: Filter for territorial collectivities (local governments).\n- `ecpi`: list of EPCI codes (comma-separated)\n- `est_patrimoine_vivant`: Filter for companies with the \"Entreprise du Patrimoine Vivant\" label.\n- `est_entrepreneur_spectacle`: true ou false\n- `est_entrepreneur_individuel`: true ou false\n- `est_organisme_formation`: Entreprise de formation\n- `est_rge`: Find companies with \"Reconnu Garant de l'Environnement\" label.\n- `est_ess`: Filter for Social and Solidarity Economy (ESS) companies.\n- `est_qualiopi`: Filter for companies with the \"Qualiopi\" certification.\n- `nom_personne`: Search for companies managed by a specific person.\n- `type_personne`: 'dirigeant' (company leader) or 'elu' (elected official).\n- `date_naissance_personne_min / date_naissance_personne_max`: Filter for company leaders born within a specific date range (format YYYY-MM-DD).\n- `ca_min / ca_max`: Filter by turnover (CA) in Euros.\n- `resultat_net_min / resultat_net_max`: Filter by net result in Euros.\n- `etat_administratif`: A (Actif) ou C (Cessé)\n- `minimal`: true to get a minimal response without secondary fields (see `include` below). If minimal is false or not set, the response includes all available data fields.\n- `include`: 'complements', 'dirigeants', 'finances', 'matching_etablissements', 'siege', 'score' to include additional data in the response (comma-separated). *Important*: this parameters can only bue used with with \"minimal=True\".\n- `page`: Page number for pagination (starts at 1).\n- `per_page`: Number of results per page (max 25).\n\n*TIP*: If you want to search for companies in a specific location, you have two options:\n1. *JS search* (preferred for precision): use the `near_point` endpoint with the lat/long of your search area and a radius in kilometers, then on the returned results, filter the right ones with a JS filter using `nom_complet` or other fields.\n2. *Postal codes*: first find the communes withing your search area and use the `code_postal` parameter with the city's postal code in either endpoint.\n\n### Response example:\n```json\n{\n  \"results\": [\n    {\n      \"siren\": \"356000000\",\n      \"nom_complet\": \"la poste\",\n      \"nom_raison_sociale\": \"LA POSTE\",\n      \"sigle\": null,\n      \"nombre_etablissements\": 12734,\n      \"nombre_etablissements_ouverts\": 9524,\n      \"siege\": {\n        \"activite_principale\": \"53.10Z\",\n        \"activite_principale_naf25\": \"53.10A\",\n        \"activite_principale_registre_metier\": null,\n        \"annee_tranche_effectif_salarie\": \"2020\",\n        \"adresse\": \"19 RUE DE LA POSTE 31700 CORNEBARRIEU\",\n        \"caractere_employeur\": \"O\",\n        \"cedex\": null,\n        \"code_pays_etranger\": null,\n        \"code_postal\": \"75015\",\n        \"commune\": \"75115\",\n        \"complement_adresse\": \"DIRECTION GENERALE DE LA POSTE\",\n        \"coordonnees\": \"43.292154,5.359134\",\n        \"date_creation\": \"2026-04-04\",\n        \"date_debut_activite\": \"2014-04-29\",\n        \"date_fermeture\": \"2026-04-04\",\n        \"date_mise_a_jour\": \"2023-09-21T03:34:50\",\n        \"date_mise_a_jour_insee\": \"2023-09-21T03:34:50\",\n        \"departement\": \"75\",\n        \"distribution_speciale\": null,\n        \"epci\": \"200058519\",\n        \"est_siege\": false,\n        \"etat_administratif\": \"A\",\n        \"geo_adresse\": \"58 Boulevard charles livon 13007 Marseille\",\n        \"geo_id\": \"31150_0157_00019\",\n        \"indice_repetition\": null,\n        \"latitude\": \"48.83002\",\n        \"libelle_cedex\": null,\n        \"libelle_commune\": \"PARIS 15\",\n        \"libelle_commune_etranger\": null,\n        \"libelle_pays_etranger\": null,\n        \"libelle_voie\": \"DU COLONEL PIERRE AVIA\",\n        \"liste_enseignes\": [\n          \"LA POSTE\"\n        ],\n        \"liste_finess\": [\n          \"950000364\"\n        ],\n        \"liste_id_bio\": [\n          \"0923\"\n        ],\n        \"liste_idcc\": [\n          \"0923\"\n        ],\n        \"liste_id_organisme_formation\": [\n          \"string\"\n        ],\n        \"liste_rge\": [\n          \"4131D111\",\n          \"7122D111\"\n        ],\n        \"liste_uai\": [\n          \"0170100S\"\n        ],\n        \"longitude\": \"2.275688\",\n        \"nom_commercial\": null,\n        \"numero_voie\": \"9\",\n        \"region\": \"11\",\n        \"siret\": \"35600000000048\",\n        \"statut_diffusion_etablissement\": \"O\",\n        \"tranche_effectif_salarie\": \"12\",\n        \"type_voie\": \"RUE\"\n      },\n      \"activite_principale\": \"53.10Z\",\n      \"activite_principale_naf25\": \"53.10A\",\n      \"categorie_entreprise\": \"GE\",\n      \"caractere_employeur\": \"O\",\n      \"annee_categorie_entreprise\": \"2020\",\n      \"date_creation\": \"1991-01-01\",\n      \"date_fermeture\": \"2026-04-04\",\n      \"date_mise_a_jour\": \"2023-09-21T03:34:50\",\n      \"date_mise_a_jour_insee\": \"2023-09-21T03:34:50\",\n      \"date_mise_a_jour_rne\": \"2023-09-20T02:15:30\",\n      \"dirigeants\": [\n        {\n          \"nom\": \"Dupont\",\n          \"prenoms\": \"John\",\n          \"annee_de_naissance\": \"1964\",\n          \"date_de_naissance\": \"1964-09\",\n          \"qualite\": \"Directeur général\",\n          \"nationalite\": \"Française\",\n          \"type_dirigeant\": \"personne physique\"\n        },\n        {\n          \"siren\": \"784824153\",\n          \"denomination\": \"string\",\n          \"qualite\": \"Commissaire aux comptes titulaire\",\n          \"type_dirigeant\": \"personne morale\"\n        }\n      ],\n      \"etat_administratif\": \"A\",\n      \"nature_juridique\": \"5510\",\n      \"section_activite_principale\": \"H\",\n      \"tranche_effectif_salarie\": \"53\",\n      \"annee_tranche_effectif_salarie\": \"2020\",\n      \"statut_diffusion\": \"O\",\n      \"matching_etablissements\": [\n        {\n          \"activite_principale\": \"53.10Z\",\n          \"activite_principale_naf25\": \"53.10A\",\n          \"ancien_siege\": false,\n          \"annee_tranche_effectif_salarie\": \"2020\",\n          \"adresse\": \"19 RUE DE LA POSTE 31700 CORNEBARRIEU\",\n          \"caractere_employeur\": \"O\",\n          \"code_postal\": \"75015\",\n          \"commune\": \"75115\",\n          \"date_creation\": \"2026-04-04\",\n          \"date_debut_activite\": \"2014-04-29\",\n          \"date_fermeture\": \"2026-04-04\",\n          \"epci\": \"200058519\",\n          \"est_siege\": false,\n          \"etat_administratif\": \"A\",\n          \"geo_id\": \"31150_0157_00019\",\n          \"latitude\": \"48.83002\",\n          \"libelle_commune\": \"PARIS 15\",\n          \"liste_enseignes\": [\n            \"LA POSTE\"\n          ],\n          \"liste_finess\": [\n            \"950000364\"\n          ],\n          \"liste_id_bio\": [\n            \"0923\"\n          ],\n          \"liste_idcc\": [\n            \"0923\"\n          ],\n          \"liste_id_organisme_formation\": [\n            \"string\"\n          ],\n          \"liste_rge\": [\n            \"4131D111\",\n            \"7122D111\"\n          ],\n          \"liste_uai\": [\n            \"0170100S\"\n          ],\n          \"longitude\": \"2.275688\",\n          \"nom_commercial\": null,\n          \"region\": \"11\",\n          \"siret\": \"35600000000048\",\n          \"statut_diffusion_etablissement\": \"O\",\n          \"tranche_effectif_salarie\": \"12\"\n        }\n      ],\n      \"finances\": {\n        \"annee_existence1\": {\n          \"ca\": 0,\n          \"resultat_net\": 0\n        },\n        \"annee_existence2\": {\n          \"ca\": 0,\n          \"resultat_net\": 0\n        },\n        \"annee_existence3\": {\n          \"ca\": 0,\n          \"resultat_net\": 0\n        }\n      },\n      \"complements\": {\n        \"collectivite_territoriale\": {\n          \"code\": \"01\",\n          \"code_insee\": \"01\",\n          \"elus\": [\n            {\n              \"nom\": \"string\",\n              \"prenoms\": \"string\",\n              \"annee_de_naissance\": \"1964\",\n              \"fonction\": \"Maire\",\n              \"sexe\": \"F\"\n            }\n          ],\n          \"niveau\": \"département\"\n        },\n        \"convention_collective_renseignee\": true,\n        \"liste_idcc\": [\n          \"string\"\n        ],\n        \"liste_finess_juridique\": [\n          \"string\"\n        ],\n        \"egapro_renseignee\": true,\n        \"est_achats_responsables\": true,\n        \"est_alim_confiance\": true,\n        \"est_association\": false,\n        \"est_bio\": true,\n        \"est_entrepreneur_individuel\": false,\n        \"est_entrepreneur_spectacle\": false,\n        \"est_ess\": false,\n        \"est_finess\": false,\n        \"est_organisme_formation\": true,\n        \"est_qualiopi\": true,\n        \"liste_id_organisme_formation\": [\n          \"7423P001123\"\n        ],\n        \"est_rge\": false,\n        \"est_service_public\": false,\n        \"est_l100_3\": false,\n        \"est_siae\": false,\n        \"est_societe_mission\": false,\n        \"est_uai\": false,\n        \"est_patrimoine_vivant\": true,\n        \"bilan_ges_renseigne\": false,\n        \"identifiant_association\": null,\n        \"statut_entrepreneur_spectacle\": \"string\",\n        \"type_siae\": \"string\"\n      }\n    }\n  ],\n  \"total_results\": 1,\n  \"page\": 1,\n  \"per_page\": 10,\n  \"total_pages\": 1\n}\n```\n\n"
+  },
+  {
+    "topic": "Job Market",
+    "name": "France Travail - Job Offers",
+    "id": "france-travail-offres",
+    "baseUrl": "https://api.francetravail.io/partenaire/offresdemploi/v2",
+    "oAuth2TokenUrl": "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire",
+    "oAuth2Login": "PAR_localflow_6f27486cbf9bead063a245b0e9c2424e238bf571e09a633f3542e33847eb983e",
+    "oAuth2Password": "653271dffa58721eda274ad37019b558bae2e427b6c4798c1bb14b616936aa0e",
+    "oAuth2Scopes": "o2dsoffre api_offresdemploiv2",
+    "apiKeyHeader": "Authorization",
+    "waitMs": 100,
+    "description": "Official access to job offers from France Travail (formerly Pôle Emploi) and its partners. Supports searching by keywords, location (INSEE), ROME job codes, and company criteria.",
+    "prompt": "Use `https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search` to search for job offers. \n\n**Authentication**: Requires an OAuth2 Bearer Token (Scopes: `o2dsoffre api_offresdemploiv2`).\n**Pagination**: Strictly handled via the `Range` HTTP Header (e.g., `Range: offres=0-49`). The range is limited to 150 results per call. The maximum start index is 3000. Do NOT use \"page\" as a query parameter.\n\nSearch Query Parameters:\n- `motsCles`: Keywords (min 2 chars) separated by commas (Logic: AND).\n- `commune`: City INSEE code (up to 5 codes separated by commas).\n- `distance`: Search radius in km around the city (requires `commune`). Use `distance=0` for exact city matches only.\n- `departement`: Department code (e.g., 33, 75). Up to 5 values.\n- `region`: Region code (e.g., 75).\n- `inclureLimitrophes`: boolean (true/false) to include bordering departments.\n- `paysContinent`: Country or continent code.\n- `codeROME`: ROME job code (e.g., D1102). Up to 200 values.\n- `appellation`: Specific ROME designation code (e.g., 38444).\n- `theme`: ROME job theme (e.g., 12).\n- `domaine`: ROME job domain (e.g., G17).\n- `grandDomaine`: Large ROME domain (e.g., M18 for IT, H for Industry).\n- `codeNAF`: Company APE/NAF code (e.g., 78.20Z). Up to 200 values.\n- `secteurActivite`: NAF division (first 2 digits, e.g., 01, 02). Up to 2 values.\n- `typeContrat`: Contract type code (e.g., CDI, CDD).\n- `natureContrat`: Contract nature code (e.g., E1).\n- `dureeContratMin / dureeContratMax`: Contract duration in months (double 0 to 99).\n- `dureeHebdo`: 0 (Unspecified), 1 (Full-time), 2 (Part-time).\n- `dureeHebdoMin / dureeHebdoMax`: Format HHMM (e.g., 3500 for 35h).\n- `tempsPlein`: boolean (true/false).\n- `experience`: 0 (Unspecified), 1 (< 1 year), 2 (1 to 3 years), 3 (> 3 years).\n- `experienceExigence`: D (beginner accepted), S (desired), E (required).\n- `niveauFormation`: Education level code (e.g., NV3).\n- `permis`: Driver's license code (e.g., B).\n- `qualification`: 0 (non-executive/non-cadre), 9 (executive/cadre).\n- `salaireMin`: Minimum salary (requires `periodeSalaire`).\n- `periodeSalaire`: M (Monthly), A (Annual), H (Hourly), C (Per performance/Cachet).\n- `minCreationDate / maxCreationDate`: ISO 8601 format (yyyy-MM-dd'T'HH:mm:ss'Z').\n- `publieeDepuis`: Maximum days since publication (integer).\n- `origineOffre`: 1 (France Travail), 2 (Partner).\n- `partenaires`: List of partner codes to include/exclude.\n- `modeSelectionPartenaires`: INCLUS or EXCLU.\n- `offresManqueCandidats`: boolean. Filter for hard-to-fill positions.\n- `offresMRS`: boolean. Offers with \"Recrutement par Simulation\" (MRS).\n- `accesTravailleurHandicape`: boolean. Open to workers with disabilities.\n- `entreprisesAdaptees`: boolean. Adapted enterprises.\n- `employeursHandiEngages`: boolean. Inclusive employers.\n- `sort`: 0 (Relevance), 1 (Creation date desc), 2 (Distance asc).\n\n### Critical LLM Implementation Details:\n1. **Response Handling**: Results are nested in a `resultats` array. If no results are found, the API returns HTTP 204 (No Content).\n2. **Metadata**: The total count of results is only available in the `Content-Range` response header (format: `offres p-d/total`). \n3. **Parameter Logic**: The filter between `typeContrat` and `natureContrat` uses an **OR** operator, meaning searching for \"CDI\" with \"natureContrat=E1\" returns all CDI offers PLUS all E1 offers.\n4. **Distance Filtering**: The API search behavior for `commune` includes a buffer of +30% beyond the `distance` parameter. Use `distance=0` for strict city boundaries.\n5. **Special Cases**: Searches on Paris (75) or Lyon always return results for the entire city regardless of district (arrondissement) if the city center is within the radius."
+  },
+  {
+    "topic": "Global Business Search",
+    "name": "Overture Maps (Places API)",
+    "id": "overture-places",
+    "waitMs": "200",
+    "baseUrl": "https://api.overturemaps.org",
+    "description": "Worldwide business locations and Points of Interest (POI). A high-quality, open alternative to Google Maps Places, backed by Amazon, Meta, and Microsoft.",
+    "prompt": "Use Overture Maps to locate businesses and points of interest globally."
+  },
+  {
+    "topic": "Food & Product Data",
+    "name": "OpenFoodFacts API",
+    "id": "openfoodfacts",
+    "waitMs": "100",
+    "baseUrl": "https://world.openfoodfacts.org/api/v2",
+    "description": "Collaborative database of food products from around the world. Connects manufacturers (companies) to their specific products, ingredients, and nutritional scores.",
+    "prompt": "Search for products or scan barcodes to retrieve nutritional and manufacturing data."
+  },
+  {
+    "topic": "Global Business Lookup",
+    "name": "OpenCorporates",
+    "id": "opencorporates",
+    "apiKeyQueryParam": "api_token",
+    "rewriteRules": [
+      [
+        "decrypt-query-param",
+        "api_token"
+      ],
+      [
+        "inject-query-param",
+        "api_token",
+        "xxx"
+      ]
+    ],
+    "waitMs": 1000,
+    "baseUrl": "https://api.opencorporates.com/v0.4",
+    "description": "World's largest corporate database (200M+ companies).",
+    "prompt": "Use GET https://api.opencorporates.com/v0.4/companies/search?q={query}. Do not include the api_token query parameter because the proxy will inject it automatically."
+  },
+  {
+    "topic": "Global Economic Indicators",
+    "name": "World Bank Data API",
+    "id": "world-bank-data",
+    "waitMs": 100,
+    "baseUrl": "https://api.worldbank.org/v2",
+    "description": "GDP, inflation, and development stats for 200+ countries.",
+    "prompt": "Use GET https://api.worldbank.org/v2/country/{iso2code}/indicator/{indicatorCode}?format=json."
+  },
+  {
+    "topic": "Global Health Statistics",
+    "name": "WHO GHO API",
+    "id": "who-gho",
+    "waitMs": 200,
+    "baseUrl": "https://ghoapi.azureedge.net/api",
+    "description": "Life expectancy, mortality rates, and health indicators worldwide.",
+    "prompt": "Use GET https://ghoapi.azureedge.net/api/{IndicatorCode}."
+  },
+  {
+    "topic": "Global Demographics",
+    "name": "UN Population Data Portal",
+    "id": "un-population",
+    "waitMs": 200,
+    "baseUrl": "https://population.un.org/dataportalapi/api/v1",
+    "description": "Official UN population estimates and projections.",
+    "apiKeyHeader": "Authorization",
+    "prompt": "Use GET https://population.un.org/dataportalapi/api/v1/data/indicators/{id}/locations/{locId}."
+  },
+  {
+    "topic": "Global Address Search",
+    "name": "Nominatim (OSM Geocoding)",
+    "id": "osm-nominatim",
+    "authType": "none",
+    "requiredReferer": "https://apps.localflow.fr",
+    "requiredUserAgent": "daquota.io",
+    "waitMs": 1000,
+    "baseUrl": "https://nominatim.openstreetmap.org",
+    "description": "Official OpenStreetMap geocoder. Converts addresses to coordinates.",
+    "prompt": "Use GET https://nominatim.openstreetmap.org/search?q={query}&format=json. The proxy will provide a custom User-Agent header automatically."
+  },
+  {
+    "topic": "Environmental Data",
+    "name": "OpenWeatherMap",
+    "id": "openweathermap",
+    "rewriteRules": [
+      [
+        "decrypt-query-param",
+        "appid"
+      ],
+      [
+        "inject-query-param",
+        "appid",
+        "LocalFlow"
+      ]
+    ],
+    "apiKeyQueryParam": "appid",
+    "waitMs": 500,
+    "baseUrl": "https://api.openweathermap.org/data/2.5",
+    "description": "Current weather and forecasts for any coordinate.",
+    "prompt": "Use GET https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}. Do not include the appid query parameter because the proxy will inject it automatically."
+  },
+  {
+    "name": "Moteur Immo",
+    "topic": "French Real Estate",
+    "id": "moteur-immo",
+    "waitMs": 200,
+    "apiKeyQueryParamGetOnly": "apiKey",
+    "apiKeyBodyParam": "apiKey",
+    "baseUrl": "https://moteurimmo.fr/api",
+    "description": "Moteur Immo is a massive aggregator for the French real estate market, indexing listings from over 70 platforms (Leboncoin, SeLoger, PAP, Bien'ici, etc.) every 10 minutes. \n        Key features include:\n        - **Advanced De-duplication**: Groups identical listings across multiple portals into a single \"main\" ad.\n        - **Data Enrichment**: Automatically extracts DPE/GES ratings, charges, and calculates estimated profitability and price-per-sqm gaps versus local market medians.\n        - **Historical Access**: Retains deleted/expired ads for 1 year and tracks price changes/republications.",
+    "prompt": "Use `https://moteurimmo.fr/api` (Moteur Immo API) to search for active or historical real estate listings in France. \n\n### CORE ENDPOINTS\n- **POST /ads**: Search for listings (active). Highly recommended for complex filtering.\n- **GET /ad/{id}**: Retrieve a specific ad via uniqueId, URL, or origin/adId pair.\n- **POST /deletedAds**: Search for ads removed from the market (minimalist format, free of charge).\n- **POST /publishers**: Search for real estate professionals or individuals.\n\n### SEARCH PARAMETERS (POST /ads) \n- **publisherTypes**: `professional`, `individual`. Default is `['professional', 'individual']`.\n- **locations**: List of objects: `{ \"inseeCode\": \"...\" }`, `{ \"postalCode\": \"...\" }`, `{ \"coordinates\": [longitude, latitude] }`, or `{ \"departmentCode\": 75 }`.\n- **radius**: Search radius in kilometers (possible values from 1 to 100).\n- **box**: Bounding box defined by `[[longitude, latitude], [longitude, latitude]]` (top-left and bottom-right coordinates).\n- **types**: Array containing `\"sale\"` or `\"rental\"`. Default is `['sale', 'rental']`.\n- **categories**: `house, flat, office, premises, shop, block (immeuble), land, parking/garage/box, misc`. Default is `['house', 'flat', 'office', 'premises', 'shop', 'block', 'land', 'parking/garage/box', 'misc']`.\n- **priceMin / priceMax**: Price in Euros.\n- **pricePerSquareMeterMin / pricePerSquareMeterMax**: Price per m² in Euros.\n- **rentMin / rentMax**: Monthly rent in Euros (for rentals).\n- **propertyChargesMin / propertyChargesMax**: Monthly property charges in Euros (for rentals).\n- **propertyTaxMin / propertyTaxMax**: Annual property (foncière) tax in Euros.\n- **roomsMin / roomsMax**: Number of main rooms.\n- **bedroomsMin / bedroomsMax**: Number of bedrooms.\n- **surfaceMin / surfaceMax**: Living area in m².\n- **landSurfaceMin / landSurfaceMax**: Land area in m².\n- **constructionYearMin / constructionYearMax**: Year of construction.\n- **floorMin / floorMax**: Floor number (for apartments).\n- **buildingFloorsMin / buildingFloorsMax**: Total number of floors in the building (for apartments).\n- **energyGradeMin / energyGradeMax**: DPE energy rating from in `['A', 'B', 'C', 'D', 'E', 'F', 'G', 'V']`.\n- **energyValueMin / energyValueMax**: DPE energy consumption in kWh/m²/year between 1 and 1000.\n- **gasGradeMin / gasGradeMax**: DPE greenhouse gas rating in `['A', 'B', 'C', 'D', 'E', 'F', 'G', 'V']`.\n- **gasValueMin / gasValueMax**: DPE greenhouse gas emissions in kgCO2/m²/year between 1 and 1000.\n- **options**: Boolean filters like `hasLift`, `hasGarden`, `isNew`, `hasWorksRequired`, `knownPosition`, or `denyProspecting`.\n- **keywords**: Array of strings to search in title and description.\n- **keywordOperator**: `and` (default) or `or` to combine multiple keywords.\n- **sortBy**: `creationDate-desc` (default), `price-asc`, `lastPriceChangeDate-desc`, `lastChangeDate-desc`.\n\n### RESPONSE SCHEMA (Ad Object)\n```typescript\ninterface MoteurImmoAd {\n  uniqueId: string;\n  title: string;\n  description: string;\n  price: number;\n  surface: number;\n  rooms: number;\n  location: {\n    city: string;\n    postalCode: string;\n    inseeCode: string;\n    coordinates: [number, number]; // [Longitude, Latitude]\n    isRightLocation: boolean;      // True if the location was verified in text\n  };\n  priceStats: {\n    profitability: number;  // Estimated yield (e.g., 0.05 for 5%)\n    medianPrice: number;     // Local median price per m²\n    priceGap: number;        // Gap percentage vs median\n  };\n  energyGrade: \"A\" | \"B\" | \"C\" | \"D\" | \"E\" | \"F\" | \"G\";\n  url: string;               // Direct link to source\n  duplicates: Array<{ origin: string; url: string; price: number }>;\n  history?: Array<{ action: string; date: string; differences: any }>;\n}\n```\n\n*IMPORTANT*: Pagination is restricted to the first 10,000 ads. To fetch older data, use `creationDateBefore` filters to create time intervals."
+  },
+  {
+    "name": "DVF (Demandes de Valeurs Foncières)",
+    "topic": "French Real Estate",
+    "id": "dvf-api",
+    "baseUrl": "https://gis.daquota.io/dvf",
+    "rewriteRules": [
+      [
+        "replace",
+        "https://gis.daquota.io/dvf",
+        "http://195.154.104.134:8889/dvf"
+      ]
+    ],
+    "description": "This API provides access to official French real estate transaction data (DVF) from Etalab. It includes over 18 million records of property sales, including prices, dates, surface areas, and room counts, geolocated and indexed for high-speed spatial proximity searches.",
+    "prompt": "Use the DVF API `https://gis.daquota.io/dvf` to retrieve historical real estate sales data in France. \n\n### SEARCH CRITERIA\nYou must provide at least one of the following filters:\n- **Spatial**: `lat`, `lon`, and `dist` (distance in meters, max 2000).\n- **Administrative**: `code_postal` (5 digits) or `code_commune` (5 digits).\n- **Cadastral**: `id_parcelle` (14 digits).\n\n### OPTIONAL FILTERS\n- `type_local`: Filter by \"Maison\", \"Appartement\", \"Local industriel\", or \"Dépendance\".\n- `nature_mutation`: Filter by \"Vente\", \"Echange\", or \"Adjudication\".\n\n### EXAMPLE RESULT\n```json\n{\"source\" : \"Etalab / Demande de Valeurs Foncières Géolocalisées\", \"type\" : \"FeatureCollection\", \"features\" : [{\"type\" : \"Feature\", \"geometry\" : {\"type\":\"Point\",\"coordinates\":[5.1102,46.401982]}, \"properties\" : {\"id_mutation\":\"2022-12446\",\"date_mutation\":\"2022-10-04\",\"numero_disposition\":\"000001\",\"nature_mutation\":\"Vente\",\"valeur_fonciere\":190000,\"adresse_numero\":\"15\",\"adresse_nom_voie\":\"PL DU MARCHE\",\"adresse_code_voie\":\"0135\",\"code_postal\":\"01560\",\"code_commune\":\"01367\",\"nom_commune\":\"Saint-Julien-sur-Reyssouze\",\"code_departement\":\"01\",\"id_parcelle\":\"013670000A1059\",\"nombre_lots\":0,\"code_type_local\":\"1\",\"type_local\":\"Maison\",\"surface_reelle_bati\":62,\"nombre_pieces_principales\":3,\"code_nature_culture\":\"S\",\"nature_culture\":\"sols\",\"surface_terrain\":421,\"longitude\":5.1102,\"latitude\":46.401982,\"geom\":{\"type\":\"Point\",\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"EPSG:4326\"}},\"coordinates\":[5.1102,46.401982]}}}...\n```\n\n*IMPORTANT*: Use the spatial search (`lat/lon`) for proximity analysis. Use the `id_parcelle` search for deep-dives into specific building history."
+  }
+]
