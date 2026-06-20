@@ -1223,8 +1223,11 @@ router.put('/admin/api-config/:id', (req, res) => {
     const descriptors = loadApiDescriptors();
     const idx = descriptors.findIndex(d => d.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
-    // An omitted apiKey keeps the existing one (the client sends it only to change it).
-    descriptors[idx] = { ...descriptors[idx], ...req.body, id: req.params.id };
+    // An omitted (or masked '***') apiKey keeps the existing one — so a GET→PUT
+    // round-trip of the masked config can't overwrite the key with literal '***'.
+    const body = { ...req.body };
+    if (body.apiKey === '***') delete body.apiKey;
+    descriptors[idx] = { ...descriptors[idx], ...body, id: req.params.id };
     saveApiDescriptors(descriptors);
     res.json(maskKey(descriptors[idx]));
 });
