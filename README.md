@@ -224,11 +224,7 @@ Per-org authorization: which capabilities, limits, and model/API allow-lists app
 
 ### API descriptor file (`api-config.json`)
 
-The `api-config.json` file defines which external APIs analysis formulas are allowed to call through the `/common/api-proxy` endpoint. **Do not edit `api-config.json` directly** — it is auto-generated. Edit `scripts/build-api-config.js` instead, then run:
-
-```bash
-node scripts/build-api-config.js
-```
+The `api-config.json` file defines which external APIs analysis formulas may call through the `/common/api-proxy` endpoint. It is **git-ignored** (it holds API keys); the committed [`api-config.example.json`](api-config.example.json) — every descriptor with keys stripped — is the reference. Manage it from the admin console's **APIs** page (`/admin/api-config`), or edit the file directly; it hot-reloads on change.
 
 Each descriptor is a JSON object with the following fields:
 
@@ -239,9 +235,8 @@ Each descriptor is a JSON object with the following fields:
 | `topic` | `string` | Category (e.g. `"geo"`, `"finance"`). |
 | `description` | `string` | Short description shown in the UI. |
 | `baseUrl` | `string \| string[]` | Allowed base URL prefix(es). Requests to any other URL are rejected with 403. |
-| `force` | `boolean` | If `true`, the API is always activated (cannot be disabled by the user). |
-| `prepaid` | `boolean` | If `true`, the proxy supplies its own API key (no BYOK). |
-| `apiKey` | `string` | Server-side API key injected by the proxy (never sent to the browser). |
+| `force` | `boolean` | If `true`, the API is always available — included in the LLM system prompt even when the user hasn't activated it. |
+| `apiKey` | `string \| object` | Server-side key the proxy injects (never sent to the browser). A string applies to all sessions; an object keys it by session type, e.g. `{ "*": "…", "public": "…", "!public": "…" }`. Omit it to require BYOK. |
 | `apiKeyHeader` | `string` | HTTP header name to inject the API key into (e.g. `"Authorization"`). |
 | `apiKeyQueryParam` | `string` | Query parameter name to inject the API key into. |
 | `apiKeyQueryParamGetOnly` | `string` | Same as `apiKeyQueryParam` but only for GET requests. |
