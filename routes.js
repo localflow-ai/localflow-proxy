@@ -583,6 +583,21 @@ function loadLlmConfigs() {
     return llmConfigs;
 }
 
+function saveLlmConfigs(configs) {
+    fs.writeFileSync(LLM_CONFIGS_FILE, JSON.stringify(configs, null, 2), 'utf8');
+    llmConfigs = configs;
+    llmConfigsLoadTime = Date.now();
+    logger.info('Saved LLM configs to %s', LLM_CONFIGS_FILE);
+}
+
+// Never expose a raw key (string or per-session-type object) to the browser —
+// only whether one is set. Used for both LLM and API admin responses.
+function maskKey(c) {
+    return { ...c, apiKey: c.apiKey ? '***' : undefined };
+}
+
+const LLM_PROTOCOLS = ['gemini', 'openai', 'anthropic'];
+
 // --- Authorization / permissions (see docs/permissions.md) ----------------
 const PERMISSIONS_FILE = process.env.PERMISSIONS_FILE || path.join(__dirname, 'permissions.json');
 let permissionsConfig = null;
@@ -1193,7 +1208,7 @@ router.get('/admin/sessions', (req, res) => {
 });
 
 router.get('/admin/api-config', (req, res) => {
-    res.json(loadApiDescriptors());
+    res.json(loadApiDescriptors().map(maskKey));   // never ship raw keys to the browser
 });
 
 router.post('/admin/api-config', (req, res) => {
@@ -1201,16 +1216,17 @@ router.post('/admin/api-config', (req, res) => {
     const newConfig = { ...req.body, id: req.body.id || crypto.randomUUID() };
     descriptors.push(newConfig);
     saveApiDescriptors(descriptors);
-    res.status(201).json(newConfig);
+    res.status(201).json(maskKey(newConfig));
 });
 
 router.put('/admin/api-config/:id', (req, res) => {
     const descriptors = loadApiDescriptors();
     const idx = descriptors.findIndex(d => d.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    // An omitted apiKey keeps the existing one (the client sends it only to change it).
     descriptors[idx] = { ...descriptors[idx], ...req.body, id: req.params.id };
     saveApiDescriptors(descriptors);
-    res.json(descriptors[idx]);
+    res.json(maskKey(descriptors[idx]));
 });
 
 router.delete('/admin/api-config/:id', (req, res) => {
@@ -1219,6 +1235,68 @@ router.delete('/admin/api-config/:id', (req, res) => {
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     descriptors.splice(idx, 1);
     saveApiDescriptors(descriptors);
+    res.status(204).end();
+});
+
+// ─── LLM configs (llm-configs.json) ───
+// Models the assistant can pick by `modelId`. Each: { id, displayName, protocol,
+// model, baseUrl?, apiKey?, isDefault? }. The apiKey is the proxy's preset key
+// (a string, or a per-session-type object); it is never returned to the browser.
+
+function validateLlmConfig(c, { partial } = {}) {
+    if (c === null || typeof c !== 'object' || Array.isArray(c)) return 'config must be an object';
+    if (!partial || c.protocol !== undefined) {
+        if (!LLM_PROTOCOLS.includes(c.protocol)) return `protocol must be one of ${LLM_PROTOCOLS.join(', ')}`;
+    }
+    if (!partial && (typeof c.model !== 'string' || !c.model.trim())) return 'model is required';
+    if (c.displayName !== undefined && typeof c.displayName !== 'string') return 'displayName must be a string';
+    if (c.baseUrl !== undefined && c.baseUrl !== '' && typeof c.baseUrl !== 'string') return 'baseUrl must be a string';
+    return null;
+}
+
+// At most one default — clear the flag on every other config.
+function applySingleDefault(configs, defaultId) {
+    if (!defaultId) return;
+    for (const c of configs) c.isDefault = c.id === defaultId;
+}
+
+router.get('/admin/llm-config', (req, res) => {
+    res.json(loadLlmConfigs().map(maskKey));
+});
+
+router.post('/admin/llm-config', (req, res) => {
+    const err = validateLlmConfig(req.body);
+    if (err) return res.status(400).json({ error: err });
+    const configs = loadLlmConfigs();
+    const cfg = { ...req.body, id: req.body.id || crypto.randomUUID() };
+    if (configs.some(c => c.id === cfg.id)) return res.status(409).json({ error: `id already exists: ${cfg.id}` });
+    configs.push(cfg);
+    if (cfg.isDefault) applySingleDefault(configs, cfg.id);
+    saveLlmConfigs(configs);
+    res.status(201).json(maskKey(cfg));
+});
+
+router.put('/admin/llm-config/:id', (req, res) => {
+    const err = validateLlmConfig(req.body, { partial: true });
+    if (err) return res.status(400).json({ error: err });
+    const configs = loadLlmConfigs();
+    const idx = configs.findIndex(c => c.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    // An omitted (or '***') apiKey keeps the existing one.
+    const body = { ...req.body };
+    if (body.apiKey === undefined || body.apiKey === '***') delete body.apiKey;
+    configs[idx] = { ...configs[idx], ...body, id: req.params.id };
+    if (configs[idx].isDefault) applySingleDefault(configs, req.params.id);
+    saveLlmConfigs(configs);
+    res.json(maskKey(configs[idx]));
+});
+
+router.delete('/admin/llm-config/:id', (req, res) => {
+    const configs = loadLlmConfigs();
+    const idx = configs.findIndex(c => c.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Not found' });
+    configs.splice(idx, 1);
+    saveLlmConfigs(configs);
     res.status(204).end();
 });
 

@@ -503,7 +503,13 @@ Returns all active sessions (tokens truncated).
 
 #### `GET /admin/api-config` / `POST /admin/api-config` / `PUT /admin/api-config/:id` / `DELETE /admin/api-config/:id`
 
-Read and manage the API descriptor list (`api-config.json`).
+Read and manage the API descriptor list (`api-config.json`). Responses mask `apiKey` to `"***"` when set (the raw key is never returned). On `PUT`, an omitted `apiKey` keeps the existing one.
+
+---
+
+#### `GET /admin/llm-config` / `POST /admin/llm-config` / `PUT /admin/llm-config/:id` / `DELETE /admin/llm-config/:id`
+
+Read and manage the LLM model list (`llm-configs.json`) — `{ id, displayName, protocol, model, baseUrl?, apiKey?, isDefault? }`. `POST`/`PUT` validate `protocol` (`gemini` / `openai` / `anthropic`) and require a `model`; setting `isDefault` clears it on the others. As with API configs, `apiKey` is masked to `"***"` in responses and an omitted (or `"***"`) `apiKey` on `PUT` keeps the existing key. Changes apply immediately (hot-reload).
 
 ---
 
