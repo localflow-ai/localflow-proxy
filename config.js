@@ -23,4 +23,20 @@ function loadProxyConfig() {
     return proxyConfig;
 }
 
-module.exports = { loadProxyConfig };
+// Persist the global proxy config (admin console). Updates the in-memory cache
+// so the change applies immediately, exactly like the file-watch hot-reload.
+function saveProxyConfig(cfg) {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+    proxyConfig = cfg;
+    configLoadTime = Date.now();
+    logger.info('Saved proxy config to %s', CONFIG_FILE);
+}
+
+// True unless public sessions are explicitly disabled. Accepts the legacy
+// `allPublicSessions` key as a fallback for the renamed `allowPublicSessions`.
+function publicSessionsAllowed(cfg) {
+    const v = cfg.allowPublicSessions ?? cfg.allPublicSessions;
+    return v !== false;
+}
+
+module.exports = { loadProxyConfig, saveProxyConfig, publicSessionsAllowed };

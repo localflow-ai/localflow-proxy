@@ -139,6 +139,13 @@ The proxy loads `.env` first, then `.env.local` (which overrides any duplicate k
 | `API_CONFIG_FILE` | No | Path to the API descriptors JSON file. Defaults to `./api-config.json`. The file is hot-reloaded whenever it changes on disk. |
 | `PORT` | No | HTTP port. Defaults to `3000`. |
 
+### Configuration model: global config vs permissions
+
+Two files, two distinct concerns — keep them straight:
+
+- **`config.json` — global, proxy-wide settings** (this section). Switches and the **per-IP daily throttle** for anonymous traffic. This throttle is the **only daily rate limiter the proxy enforces**.
+- **`permissions.json` — per-identity entitlements** (below): what each layer (`public`/`authenticated`/group/user) may *do* (capabilities, models, APIs) and **per-request** sizing (`maxPromptChars`, `maxUploadBytes`). It does **not** carry per-day counts.
+
 ### Proxy config file (`config.json`)
 
 `config.json` controls runtime behaviour of the proxy. It is hot-reloaded on every request when the file changes on disk — no restart required.
@@ -148,7 +155,7 @@ The proxy loads `.env` first, then `.env.local` (which overrides any duplicate k
   "allowedOrigins": "*",
   "sessionTtlMs": 86400000,
   "safeMode": false,
-  "allPublicSessions": true,
+  "allowPublicSessions": true,
   "publicSessionLimiterConfiguration": {
     "genaiPerIpPerDay": 40,
     "apiPerIpPerDay": 5000
@@ -158,10 +165,10 @@ The proxy loads `.env` first, then `.env.local` (which overrides any duplicate k
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `allowedOrigins` | `"*"` | CORS allowed origins. `"*"` allows all. Use a string or array of strings to restrict. |
+| `allowedOrigins` | `"*"` | **CORS** allowed origins. `"*"` allows all; a string or array restricts. Browser-only protection: it stops other *websites* from calling the proxy from a browser, but a non-browser client can forge `Origin` — keep the per-IP limits below as the real backstop. |
 | `sessionTtlMs` | `86400000` | Session idle timeout in milliseconds (default 24 h). |
 | `safeMode` | `false` | When `true`, the proxy never forwards file attachments to the LLM: any `/common/genai` request carrying `attachments` is rejected with HTTP 403, and `GET /public/config` reports `safeMode: true`. A policy clients cannot override. |
-| `allPublicSessions` | `true` | Set to `false` to disable all unauthenticated (public) sessions without a restart. |
+| `allowPublicSessions` | `true` | Set to `false` to disable all unauthenticated (public) sessions without a restart. *(The former name `allPublicSessions` is still accepted as a fallback.)* |
 | `publicSessionLimiterConfiguration.genaiPerIpPerDay` | `40` | Max AI (genai) requests per IP per day for public sessions. |
 | `publicSessionLimiterConfiguration.apiPerIpPerDay` | `5000` | Max API proxy requests per IP per day for public sessions. |
 
@@ -287,7 +294,7 @@ Returns the **resolved authorization set** for the current session (capabilities
 ```json
 {
   "capabilities": ["ai.use", "data.uploadTabular", "api.use", "analysis.runLocal"],
-  "limits": { "maxPromptChars": 50000, "maxUploadBytes": 26214400, "genaiPerDay": null, "apiPerDay": null },
+  "limits": { "maxPromptChars": 50000, "maxUploadBytes": 26214400 },
   "models": ["*"],
   "apis": ["*"]
 }
@@ -472,9 +479,9 @@ Authenticate as admin. Body: `{ "token": "<ADMIN_TOKEN>" }`. Returns `{ "token":
 
 ---
 
-#### `GET /admin/config`
+#### `GET /admin/config` / `PUT /admin/config`
 
-Returns the current live proxy config (from `config.json`).
+`GET` returns the current live proxy config (from `config.json`). `PUT` updates it (managed from the console's **Settings** page) and hot-reloads immediately. The body is validated and **merged** into the existing config — only the keys you send change. Accepted keys: `allowedOrigins`, `allowPublicSessions`, `safeMode`, `sessionTtlMs`, `publicSessionLimiterConfiguration` (`genaiPerIpPerDay`/`apiPerIpPerDay`, both positive integers — the per-IP throttle is never unlimited). Sending `allowPublicSessions` normalises away the legacy `allPublicSessions` key.
 
 ---
 

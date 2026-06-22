@@ -17,7 +17,7 @@ const Bottleneck = require("bottleneck");
 
 const { getLogger } = require('./logging');
 const logger = getLogger('routes');
-const { loadProxyConfig } = require('./config');
+const { loadProxyConfig, saveProxyConfig, publicSessionsAllowed } = require('./config');
 
 const DESCRIPTORS_FILE = process.env.API_CONFIG_FILE || path.join(__dirname, 'api-config.json');
 let apiDescriptors = [];
@@ -214,7 +214,7 @@ router.get('/public/config', (req, res) => {
         // genai request that carries attachments (defense in depth, below).
         safeMode: cfg.safeMode === true,
         publicSessions: {
-            enabled: cfg.allPublicSessions !== false,
+            enabled: publicSessionsAllowed(cfg),
             rateLimits: cfg.publicSessionLimiterConfiguration ?? { genaiPerIpPerDay: 40, apiPerIpPerDay: 5000 },
         },
     });
@@ -247,7 +247,7 @@ router.use(async (req, res, next) => {
     // --- Limiter for public connector ---
     if (session.type === 'public') {
         const cfg = loadProxyConfig();
-        if (cfg.allPublicSessions === false) {
+        if (!publicSessionsAllowed(cfg)) {
             return res.status(403).json({ error: 'Public sessions are currently disabled.' });
         }
         const isApi   = req.path.includes('api-proxy');
@@ -624,9 +624,9 @@ const ALL_CAPABILITIES = [
     'analysis.runLocal', 'analysis.share', 'chat.paste',
 ];
 // Deny-by-default empty set (also the fail-closed result for a broken file).
-const EMPTY_PERMISSIONS = () => ({ capabilities: [], limits: { maxPromptChars: 0, maxUploadBytes: 0, genaiPerDay: 0, apiPerDay: 0 }, models: [], apis: [] });
+const EMPTY_PERMISSIONS = () => ({ capabilities: [], limits: { maxPromptChars: 0, maxUploadBytes: 0 }, models: [], apis: [] });
 // Legacy/unconfigured: no permissions.json at all ⇒ no restrictions (opt-in feature).
-const ALLOW_ALL = () => ({ capabilities: [...ALL_CAPABILITIES], limits: { maxPromptChars: null, maxUploadBytes: null, genaiPerDay: null, apiPerDay: null }, models: ['*'], apis: ['*'] });
+const ALLOW_ALL = () => ({ capabilities: [...ALL_CAPABILITIES], limits: { maxPromptChars: null, maxUploadBytes: null }, models: ['*'], apis: ['*'] });
 
 // Resolve the effective permission set for a session: public | authenticated
 // base, then (future) groups, then per-user additive. Deny-by-default within a
@@ -665,7 +665,10 @@ function resolvePermissions(type, userKeys, groups) {
 function permHas(req, cap) { return !req.permissions || req.permissions.capabilities.includes(cap); }
 function denyPerm(res, cap) { return res.status(403).json({ error: `Not authorized: ${cap}` }); }
 
-const LIMIT_KEYS = ['maxPromptChars', 'maxUploadBytes', 'genaiPerDay', 'apiPerDay'];
+// Per-request entitlement limits. Per-DAY rate limiting is NOT here — that is the
+// per-IP throttle in config.json (publicSessionLimiterConfiguration), the only
+// daily limiter the proxy enforces. See README → "Configuration model".
+const LIMIT_KEYS = ['maxPromptChars', 'maxUploadBytes'];
 
 // Persist the permissions document (admin console). Mirrors saveApiDescriptors:
 // write + refresh the in-memory cache so the new policy applies immediately.
@@ -1200,6 +1203,43 @@ router.get('/admin/stats', async (req, res) => {
 
 router.get('/admin/config', (req, res) => {
     res.json(loadProxyConfig());
+});
+
+// Validate the subset of global-config fields the console manages. Unknown keys
+// in the body are rejected; absent keys are left untouched on save (merge).
+const _posInt = (v) => typeof v === 'number' && Number.isInteger(v) && v > 0;
+function validateProxyConfig(body) {
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) return 'config must be an object';
+    const allowed = ['allowedOrigins', 'allowPublicSessions', 'safeMode', 'sessionTtlMs', 'publicSessionLimiterConfiguration'];
+    for (const k of Object.keys(body)) {
+        if (!allowed.includes(k)) return `unknown config key "${k}" (allowed: ${allowed.join(', ')})`;
+    }
+    if ('allowedOrigins' in body) {
+        const o = body.allowedOrigins;
+        const ok = o === '*' || (Array.isArray(o) && o.every(x => typeof x === 'string' && x.trim()));
+        if (!ok) return 'allowedOrigins must be "*" or an array of origin strings';
+    }
+    if ('allowPublicSessions' in body && typeof body.allowPublicSessions !== 'boolean') return 'allowPublicSessions must be a boolean';
+    if ('safeMode' in body && typeof body.safeMode !== 'boolean') return 'safeMode must be a boolean';
+    if ('sessionTtlMs' in body && !_posInt(body.sessionTtlMs)) return 'sessionTtlMs must be a positive integer (ms)';
+    if ('publicSessionLimiterConfiguration' in body) {
+        const rl = body.publicSessionLimiterConfiguration;
+        if (rl === null || typeof rl !== 'object' || Array.isArray(rl)) return 'publicSessionLimiterConfiguration must be an object';
+        // Per-IP public quotas: always finite (never null) — they guard against abuse.
+        if (!_posInt(rl.genaiPerIpPerDay)) return 'genaiPerIpPerDay must be a positive integer';
+        if (!_posInt(rl.apiPerIpPerDay)) return 'apiPerIpPerDay must be a positive integer';
+    }
+    return null;
+}
+
+router.put('/admin/config', express.json(), (req, res) => {
+    const err = validateProxyConfig(req.body);
+    if (err) return res.status(400).json({ error: err });
+    const merged = { ...loadProxyConfig(), ...req.body };
+    // Normalise away the legacy key once the console writes the new one.
+    if ('allowPublicSessions' in req.body) delete merged.allPublicSessions;
+    saveProxyConfig(merged);
+    res.json(merged);
 });
 
 router.get('/admin/sessions', (req, res) => {
