@@ -170,6 +170,7 @@ Two files, two distinct concerns — keep them straight:
 | `allowedOrigins` | `"*"` | **CORS** allowed origins. `"*"` allows all; a string or array restricts. Browser-only protection: it stops other *websites* from calling the proxy from a browser, but a non-browser client can forge `Origin` — keep the per-IP limits below as the real backstop. |
 | `sessionTtlMs` | `86400000` | Session idle timeout in milliseconds (default 24 h). |
 | `safeMode` | `false` | When `true`, the proxy never forwards file attachments to the LLM: any `/common/genai` request carrying `attachments` is rejected with HTTP 403, and `GET /public/config` reports `safeMode: true`. A policy clients cannot override. |
+| `pythonBin` | `"python3"` | Interpreter used to run `scripts/extract_pdf.py` for PDF extraction. Point it at a modern Python (3.8+) — e.g. a venv's `bin/python` — whose `pdfplumber` supports `x_tolerance_ratio`; a stale system `python3` will fail. Overrides the `PYTHON_BIN` env var. Not settable via `PUT /admin/config` (server-side only). |
 | `allowPublicSessions` | `true` | Set to `false` to disable all unauthenticated (public) sessions without a restart. *(The former name `allPublicSessions` is still accepted as a fallback.)* |
 | `publicSessionLimiterConfiguration.genaiPerIpPerDay` | `40` | Max AI (genai) requests per IP per day for public sessions. |
 | `publicSessionLimiterConfiguration.apiPerIpPerDay` | `5000` | Max API proxy requests per IP per day for public sessions. |

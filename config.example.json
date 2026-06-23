@@ -3,6 +3,7 @@
   "allowedOrigins": "*",
   "sessionTtlMs": 86400000,
   "safeMode": false,
+  "pythonBin": "python3",
   "allowPublicSessions": true,
   "publicSessionLimiterConfiguration": {
     "genaiPerIpPerDay": 40,

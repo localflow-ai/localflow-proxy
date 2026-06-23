@@ -968,9 +968,15 @@ const normalizeForFuzzy = (str) => {
         .replace(/[^a-z0-9]/g, "");      // Remove punctuation/spaces
 };
 
+// Interpreter that runs scripts/extract_pdf.py. Point this at a modern Python
+// (3.8+) whose pdfplumber supports x_tolerance_ratio — e.g. a venv — instead of
+// a stale system python3. Per-proxy config.json wins, then the PYTHON_BIN env,
+// then 'python3'.
+const resolvePythonBin = () => loadProxyConfig().pythonBin || process.env.PYTHON_BIN || 'python3';
+
 function extractWithPdfplumber(buffer) {
     return new Promise((resolve, reject) => {
-        const py = spawn('python3', [path.join(__dirname, 'scripts/extract_pdf.py')]);
+        const py = spawn(resolvePythonBin(), [path.join(__dirname, 'scripts/extract_pdf.py')]);
         let stdout = '';
         let stderr = '';
         py.stdout.on('data', d => { stdout += d; });
