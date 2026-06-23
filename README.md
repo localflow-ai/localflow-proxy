@@ -152,6 +152,7 @@ Two files, two distinct concerns — keep them straight:
 
 ```json
 {
+  "adminToken": "REPLACE_WITH_A_STRONG_PER_TENANT_TOKEN",
   "allowedOrigins": "*",
   "sessionTtlMs": 86400000,
   "safeMode": false,
@@ -165,6 +166,7 @@ Two files, two distinct concerns — keep them straight:
 
 | Field | Default | Description |
 |-------|---------|-------------|
+| `adminToken` | _(unset)_ | Token that unlocks the admin endpoints / console for **this** proxy (`POST /admin/session`). Lives in the per-proxy `config.json` so each tenant has its own admin credential; takes precedence over the legacy `ADMIN_TOKEN` env var (kept as a fallback). Masked to `"***"` in `GET /admin/config`; unset ⇒ admin access returns `503`. |
 | `allowedOrigins` | `"*"` | **CORS** allowed origins. `"*"` allows all; a string or array restricts. Browser-only protection: it stops other *websites* from calling the proxy from a browser, but a non-browser client can forge `Origin` — keep the per-IP limits below as the real backstop. |
 | `sessionTtlMs` | `86400000` | Session idle timeout in milliseconds (default 24 h). |
 | `safeMode` | `false` | When `true`, the proxy never forwards file attachments to the LLM: any `/common/genai` request carrying `attachments` is rejected with HTTP 403, and `GET /public/config` reports `safeMode: true`. A policy clients cannot override. |
@@ -481,7 +483,7 @@ Authenticate as admin. Body: `{ "token": "<ADMIN_TOKEN>" }`. Returns `{ "token":
 
 #### `GET /admin/config` / `PUT /admin/config`
 
-`GET` returns the current live proxy config (from `config.json`). `PUT` updates it (managed from the console's **Settings** page) and hot-reloads immediately. The body is validated and **merged** into the existing config — only the keys you send change. Accepted keys: `allowedOrigins`, `allowPublicSessions`, `safeMode`, `sessionTtlMs`, `publicSessionLimiterConfiguration` (`genaiPerIpPerDay`/`apiPerIpPerDay`, both positive integers — the per-IP throttle is never unlimited). Sending `allowPublicSessions` normalises away the legacy `allPublicSessions` key.
+`GET` returns the current live proxy config (from `config.json`), with `adminToken` masked to `"***"`. `PUT` updates it (managed from the console's **Settings** page) and hot-reloads immediately. The body is validated and **merged** into the existing config — only the keys you send change. Accepted keys: `allowedOrigins`, `allowPublicSessions`, `safeMode`, `sessionTtlMs`, `publicSessionLimiterConfiguration` (`genaiPerIpPerDay`/`apiPerIpPerDay`, both positive integers — the per-IP throttle is never unlimited), and `adminToken` (an omitted or `"***"` value keeps the existing token). Sending `allowPublicSessions` normalises away the legacy `allPublicSessions` key.
 
 ---
 

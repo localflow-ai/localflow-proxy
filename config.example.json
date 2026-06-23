@@ -1,4 +1,5 @@
 {
+  "adminToken": "REPLACE_WITH_A_STRONG_PER_TENANT_TOKEN",
   "allowedOrigins": "*",
   "sessionTtlMs": 86400000,
   "safeMode": false,

@@ -25,7 +25,10 @@ let lastLoadTime = 0;
 const nextAllowedTimes = new Map();
 
 // Admin
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+// Admin token is resolved per-request from the proxy's own config.json (so it's
+// per-tenant under the shared-process router) with the ADMIN_TOKEN env var as a
+// legacy fallback for standalone deployments. See resolveAdminToken().
+const resolveAdminToken = () => loadProxyConfig().adminToken || process.env.ADMIN_TOKEN;
 const startTime = Date.now();
 
 // Event ring buffer — last 500 events, all types
@@ -173,11 +176,12 @@ function getClientIp(req) {
 
 // Admin session — unauthenticated; must be before the auth middleware
 router.post('/admin/session', express.json(), (req, res) => {
-    if (!ADMIN_TOKEN) {
-        return res.status(503).json({ error: 'Admin access not configured. Set ADMIN_TOKEN env var.' });
+    const adminToken = resolveAdminToken();
+    if (!adminToken) {
+        return res.status(503).json({ error: 'Admin access not configured. Set "adminToken" in this proxy\'s config.json (or the ADMIN_TOKEN env var).' });
     }
     const { token } = req.body;
-    if (!token || token !== ADMIN_TOKEN) {
+    if (!token || token !== adminToken) {
         return res.status(401).json({ error: 'Invalid admin token' });
     }
     const adminConnector = {
@@ -1201,8 +1205,11 @@ router.get('/admin/stats', async (req, res) => {
     });
 });
 
+// Never ship the admin token to the browser — mask it like the API/LLM keys.
+const maskConfig = (cfg) => ({ ...cfg, ...(cfg.adminToken ? { adminToken: '***' } : {}) });
+
 router.get('/admin/config', (req, res) => {
-    res.json(loadProxyConfig());
+    res.json(maskConfig(loadProxyConfig()));
 });
 
 // Validate the subset of global-config fields the console manages. Unknown keys
@@ -1210,9 +1217,13 @@ router.get('/admin/config', (req, res) => {
 const _posInt = (v) => typeof v === 'number' && Number.isInteger(v) && v > 0;
 function validateProxyConfig(body) {
     if (body === null || typeof body !== 'object' || Array.isArray(body)) return 'config must be an object';
-    const allowed = ['allowedOrigins', 'allowPublicSessions', 'safeMode', 'sessionTtlMs', 'publicSessionLimiterConfiguration'];
+    const allowed = ['allowedOrigins', 'allowPublicSessions', 'safeMode', 'sessionTtlMs', 'publicSessionLimiterConfiguration', 'adminToken'];
     for (const k of Object.keys(body)) {
         if (!allowed.includes(k)) return `unknown config key "${k}" (allowed: ${allowed.join(', ')})`;
+    }
+    // '***' is the keep-existing sentinel (a masked value round-tripped from GET).
+    if ('adminToken' in body && body.adminToken !== '***' && (typeof body.adminToken !== 'string' || !body.adminToken.trim())) {
+        return 'adminToken must be a non-empty string';
     }
     if ('allowedOrigins' in body) {
         const o = body.allowedOrigins;
@@ -1235,11 +1246,14 @@ function validateProxyConfig(body) {
 router.put('/admin/config', express.json(), (req, res) => {
     const err = validateProxyConfig(req.body);
     if (err) return res.status(400).json({ error: err });
-    const merged = { ...loadProxyConfig(), ...req.body };
+    const current = loadProxyConfig();
+    const merged = { ...current, ...req.body };
     // Normalise away the legacy key once the console writes the new one.
     if ('allowPublicSessions' in req.body) delete merged.allPublicSessions;
+    // A masked '***' adminToken means "keep the existing one" (don't overwrite with literal '***').
+    if (req.body.adminToken === '***') merged.adminToken = current.adminToken;
     saveProxyConfig(merged);
-    res.json(merged);
+    res.json(maskConfig(merged));
 });
 
 router.get('/admin/sessions', (req, res) => {
