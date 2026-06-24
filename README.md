@@ -2,7 +2,7 @@
 
 > **Apache 2.0 License** — See [LICENSE](#license) at the bottom of this file.
 
-The LocalFlow Proxy is an edge or cloud service that bridges how [localflow-core](https://github.com/localflow-ai/localflow-core) accesses external data and APIs. It adds CRM/ERP connections, governed external API access, server-side edge services, and full data-flow auditability. When deployed, it becomes the single point of control for a zero-trust data boundary: every outbound call from the AI sandbox is explicitly whitelisted, authenticated, and audited — nothing leaves your network without authorization.
+The LocalFlow Proxy is an edge or cloud service that bridges how [localflow-core](https://github.com/localflow-ai/localflow-core) accesses external data and APIs. It adds CRM/ERP connections, governed external API access, server-side edge services, and full data-flow auditability. When deployed, it becomes the single point of control for a zero-trust data boundary: every outbound call from the AI sandbox is explicitly whitelisted, authenticated, and audited — nothing leaves your network without authorization. It is the governed boundary that lets local-first analysis use remote models and APIs without giving up control of your data or keys.
 
 It serves five key purposes:
 
