@@ -162,9 +162,9 @@ function _consumeQuota(store, ip, limit) {
         e = { count: 0, resetAt: now + 86_400_000 };
         store.set(ip, e);
     }
-    if (e.count >= limit) return { allowed: false, remaining: 0 };
+    if (e.count >= limit) return { allowed: false, remaining: 0, resetAt: e.resetAt };
     e.count++;
-    return { allowed: true, remaining: limit - e.count };
+    return { allowed: true, remaining: limit - e.count, resetAt: e.resetAt };
 }
 
 // Returns the real client IP, respecting X-Forwarded-For set by a reverse proxy.
@@ -260,13 +260,20 @@ router.use(async (req, res, next) => {
             const rl = cfg.publicSessionLimiterConfiguration ?? {};
             const limit = isGenai ? (rl.genaiPerIpPerDay ?? 40) : (rl.apiPerIpPerDay ?? 5000);
             const clientIp = getClientIp(req);
-            const { allowed, remaining } = _consumeQuota(isGenai ? _quotas.genai : _quotas.api, clientIp, limit);
+            const { allowed, remaining, resetAt } = _consumeQuota(isGenai ? _quotas.genai : _quotas.api, clientIp, limit);
             logger.debug(`IP: ${clientIp} | ${isGenai ? 'GenAI' : 'API'} quota remaining: ${remaining}`);
             if (!allowed) {
                 logger.warn('Rate limit triggered for IP %s on %s', clientIp, req.path);
+                const retryAfterSeconds = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
+                res.set('Retry-After', String(retryAfterSeconds));
+                // resetAt (epoch ms) + retryAfterSeconds are the structured fields;
+                // the time is also embedded in `error` because some clients surface
+                // only that field (e.g. ProxyClient). The instant is timezone-agnostic
+                // — the client renders it in the user's local time.
                 return res.status(429).json({
-                    error: 'Too many requests',
-                    detail: `Public session ${isGenai ? 'GenAI' : 'API'} rate limit exceeded.`
+                    error: `Public session ${isGenai ? 'GenAI' : 'API'} rate limit exceeded — you can try again after ${new Date(resetAt).toISOString()}.`,
+                    resetAt,
+                    retryAfterSeconds,
                 });
             }
         }
@@ -593,10 +600,29 @@ function saveLlmConfigs(configs) {
     logger.info('Saved LLM configs to %s', LLM_CONFIGS_FILE);
 }
 
+// Last 4 chars of a key (string, or per-session-type object → first set value).
+// Display-only, so an admin can tell which key is configured when several exist.
+function keyLast4(apiKey) {
+    if (typeof apiKey === 'string') return apiKey.length >= 4 ? apiKey.slice(-4) : null;
+    if (apiKey && typeof apiKey === 'object') {
+        for (const v of Object.values(apiKey)) {
+            const s = keyLast4(v);
+            if (s) return s;
+        }
+    }
+    return null;
+}
+
 // Never expose a raw key (string or per-session-type object) to the browser —
-// only whether one is set. Used for both LLM and API admin responses.
-function maskKey(c) {
-    return { ...c, apiKey: c.apiKey ? '***' : undefined };
+// only whether one is set (`apiKey: '***'`, also the keep-existing sentinel on
+// PUT). `withLast4` adds a display-only `apiKeyLast4`; pass it only for LLM
+// configs (server keys are plaintext) — api-config keys are encrypted at rest,
+// so their last 4 would be meaningless ciphertext. Used for LLM + API responses.
+function maskKey(c, withLast4 = false) {
+    if (!c.apiKey) return { ...c, apiKey: undefined };
+    const masked = { ...c, apiKey: '***' };
+    if (withLast4) masked.apiKeyLast4 = keyLast4(c.apiKey) || undefined;
+    return masked;
 }
 
 const LLM_PROTOCOLS = ['gemini', 'openai', 'anthropic'];
@@ -1323,7 +1349,7 @@ function applySingleDefault(configs, defaultId) {
 }
 
 router.get('/admin/llm-config', (req, res) => {
-    res.json(loadLlmConfigs().map(maskKey));
+    res.json(loadLlmConfigs().map(c => maskKey(c, true)));
 });
 
 router.post('/admin/llm-config', (req, res) => {
@@ -1331,11 +1357,12 @@ router.post('/admin/llm-config', (req, res) => {
     if (err) return res.status(400).json({ error: err });
     const configs = loadLlmConfigs();
     const cfg = { ...req.body, id: req.body.id || crypto.randomUUID() };
+    delete cfg.apiKeyLast4; // display-only field, never persisted
     if (configs.some(c => c.id === cfg.id)) return res.status(409).json({ error: `id already exists: ${cfg.id}` });
     configs.push(cfg);
     if (cfg.isDefault) applySingleDefault(configs, cfg.id);
     saveLlmConfigs(configs);
-    res.status(201).json(maskKey(cfg));
+    res.status(201).json(maskKey(cfg, true));
 });
 
 router.put('/admin/llm-config/:id', (req, res) => {
@@ -1347,10 +1374,11 @@ router.put('/admin/llm-config/:id', (req, res) => {
     // An omitted (or '***') apiKey keeps the existing one.
     const body = { ...req.body };
     if (body.apiKey === undefined || body.apiKey === '***') delete body.apiKey;
+    delete body.apiKeyLast4; // display-only field round-tripped from GET, never persisted
     configs[idx] = { ...configs[idx], ...body, id: req.params.id };
     if (configs[idx].isDefault) applySingleDefault(configs, req.params.id);
     saveLlmConfigs(configs);
-    res.json(maskKey(configs[idx]));
+    res.json(maskKey(configs[idx], true));
 });
 
 router.delete('/admin/llm-config/:id', (req, res) => {

@@ -514,7 +514,7 @@ Read and manage the API descriptor list (`api-config.json`). Responses mask `api
 
 #### `GET /admin/llm-config` / `POST /admin/llm-config` / `PUT /admin/llm-config/:id` / `DELETE /admin/llm-config/:id`
 
-Read and manage the LLM model list (`llm-configs.json`) — `{ id, displayName, protocol, model, baseUrl?, apiKey?, isDefault? }`. `POST`/`PUT` validate `protocol` (`gemini` / `openai` / `anthropic`) and require a `model`; setting `isDefault` clears it on the others. As with API configs, `apiKey` is masked to `"***"` in responses and an omitted (or `"***"`) `apiKey` on `PUT` keeps the existing key. Changes apply immediately (hot-reload).
+Read and manage the LLM model list (`llm-configs.json`) — `{ id, displayName, protocol, model, baseUrl?, apiKey?, isDefault? }`. `POST`/`PUT` validate `protocol` (`gemini` / `openai` / `anthropic`) and require a `model`; setting `isDefault` clears it on the others. As with API configs, `apiKey` is masked to `"***"` in responses and an omitted (or `"***"`) `apiKey` on `PUT` keeps the existing key. Responses also include a display-only `apiKeyLast4` (the last 4 chars of the configured key) so admins can tell keys apart; it is never persisted. Changes apply immediately (hot-reload).
 
 ---
 
