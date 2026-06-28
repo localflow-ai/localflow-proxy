@@ -60,6 +60,13 @@ _WORD_KW  = {'x_tolerance': 3, 'y_tolerance': 3, 'x_tolerance_ratio': _X_TOL_RAT
 # touch a lone '.'/'-' cell or the ' | ' column separators.
 _PUNCT_FIX = re.compile(r'(\w) ([,.])')
 
+# A "value" cell: a number with the usual financial decoration (thousands marks,
+# decimals, %, currency, sign) and at least one digit, but no letters — so it
+# matches "127,5022", "3 995,92", "6,31%", "1'117'653", "150.74" but not a name,
+# an ISIN ("CH1335392721"), or a header word. Used to require that a column split
+# is evidenced by real data rows, not multi-line headers or chart-axis labels.
+_VALUE_RE = re.compile(r"^[\d.,'’\s%€$¤+\-]*\d[\d.,'’\s%€$¤+\-]*$")
+
 
 def _normalize(text: str) -> str:
     """Final text clean-up applied to every page."""
@@ -74,6 +81,104 @@ def _normalize(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Word-based helpers (fallback path)
 # ---------------------------------------------------------------------------
+
+def _refine_split_columns(row_groups, col_bounds):
+    """Split a derived column that actually holds two x-separated stacks of content.
+
+    The densest-row grid (see `_words_to_text`) only sees columns present on that
+    one row, so it misses a column never populated on the same row as its
+    neighbours — e.g. a narrow left *classification* column (Actions / Mixtes /
+    Autres) whose label rows differ from the rows carrying the security name —
+    and that column collapses into the adjacent one.  Detect and re-split it,
+    tightly guarded so existing extractions stay byte-identical:
+
+      * Only the *leftmost* column is considered (the observed shape: a row label
+        swallowed by the name).
+      * Geometry is read only from *tabular* rows (>= 3 populated columns), so
+        prose/title/sub-header rows — which span the page width and would paper
+        over the inter-column gap — don't corrupt it.
+      * The split needs a clean vertical stripe between SPLIT_GAP_MIN and
+        SPLIT_GAP_MAX wide (a moderate gap; a far wider void is a hanging indent,
+        not a column) that no group crosses.
+      * The two sides must be *vertically segregated* (never share a row — else
+        they're one cell, e.g. the currency-prefixed value "USD -0.01"), each
+        recur on >= 2 rows with real width, and each be evidenced by an actual
+        data row (a numeric value), not just multi-line headers / chart labels.
+    """
+    SPLIT_GAP_MIN = 14.0   # pt — a real column separator, well above intra-cell gaps
+    SPLIT_GAP_MAX = 40.0   # pt — but a far wider void is a hanging indent (e.g. a
+                           # sub-total label vs an indented holding), not a column
+
+    def _col_of(mid):
+        for i, (cx0, cx1) in enumerate(col_bounds):
+            if cx0 <= mid < cx1:
+                return i
+        return min(range(len(col_bounds)),
+                   key=lambda i: abs(mid - (col_bounds[i][0] + col_bounds[i][1]) / 2))
+
+    # Bucket gap-groups into columns, but only from rows that look tabular
+    # (>= 3 distinct columns populated). Each entry is (gx0, gx1, row_index).
+    # Also flag rows that carry a numeric value — a real column split must be
+    # evidenced by data, not by multi-line headers or chart-axis labels.
+    per_col = [[] for _ in col_bounds]
+    data_rows = set()
+    for ri, groups in enumerate(row_groups):
+        bucketed = []
+        for g in groups:
+            gx0 = min(w['x0'] for w in g)
+            gx1 = max(w['x1'] for w in g)
+            text = ' '.join(w['text'] for w in g)
+            if _VALUE_RE.match(text):
+                data_rows.add(ri)
+            bucketed.append((_col_of((gx0 + gx1) / 2), gx0, gx1))
+        if len({ci for ci, _, _ in bucketed}) < 3:
+            continue  # prose / header / total row — not column geometry
+        for ci, gx0, gx1 in bucketed:
+            per_col[ci].append((gx0, gx1, ri))
+
+    refined = []
+    for ci, ((cx0, cx1), groups) in enumerate(zip(col_bounds, per_col)):
+        split_x = None
+        # Only the leftmost column: the merged-label case is a narrow first
+        # column (a classification / row-label) swallowed by the security name.
+        # Restricting to column 0 matches that shape and keeps interior columns
+        # (and the diverse tables that have them) untouched.
+        if ci == 0 and len(groups) >= 3:
+            groups.sort(key=lambda t: t[0])
+            # Widest gap not crossed by any group (groups may overlap in x, so
+            # track a running right edge rather than comparing only neighbours).
+            cover_end = groups[0][1]
+            best_gap, best_at = 0.0, None
+            for gx0, gx1, _ in groups[1:]:
+                if gx0 - cover_end > best_gap:
+                    best_gap, best_at = gx0 - cover_end, (cover_end, gx0)
+                cover_end = max(cover_end, gx1)
+            if SPLIT_GAP_MIN <= best_gap <= SPLIT_GAP_MAX and best_at:
+                stripe = (best_at[0] + best_at[1]) / 2
+                left  = [(gx0, gx1, ri) for gx0, gx1, ri in groups if gx1 <= stripe]
+                right = [(gx0, gx1, ri) for gx0, gx1, ri in groups if gx0 >= stripe]
+                left_rows  = {ri for _, _, ri in left}
+                right_rows = {ri for _, _, ri in right}
+                MIN_BAND = 12.0  # pt — each side must be a real column, not a stray
+                if (left and right
+                        # vertical segregation: the two stacks never share a row
+                        # (else they're one cell, e.g. a currency-prefixed value),
+                        and not (left_rows & right_rows)
+                        # each side must recur and have real width — rejects a
+                        # one-off header word, a peeled page number, etc.
+                        and len(left_rows) >= 2 and len(right_rows) >= 2
+                        and max(b for _, b, _ in left)  - min(a for a, _, _ in left)  >= MIN_BAND
+                        and max(b for _, b, _ in right) - min(a for a, _, _ in right) >= MIN_BAND
+                        # evidenced by data on both sides — not a header/chart split
+                        and (left_rows & data_rows) and (right_rows & data_rows)):
+                    split_x = stripe
+        if split_x is not None:
+            refined.append((cx0, split_x))
+            refined.append((split_x, cx1))
+        else:
+            refined.append((cx0, cx1))
+    return refined
+
 
 def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
     """Convert words to indented pipe-separated column text (word-based fallback).
@@ -114,7 +219,8 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
     # still split at the same column boundaries as the header/densest row.
     col_bounds = None
     if derive_col_bounds:
-        best_groups = max((_gap_groups(r) for r in rows), key=len, default=[])
+        row_groups = [_gap_groups(r) for r in rows]
+        best_groups = max(row_groups, key=len, default=[])
         if len(best_groups) >= 3:
             bounds = []
             for i, g in enumerate(best_groups):
@@ -123,7 +229,11 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
                 left  = (max(w['x1'] for w in best_groups[i - 1]) + gx0) / 2 if i > 0 else 0
                 right = (gx1 + min(w['x0'] for w in best_groups[i + 1])) / 2 if i < len(best_groups) - 1 else 1e6
                 bounds.append((left, right))
-            col_bounds = bounds
+            # A column populated only on rows that never carry its neighbours
+            # (e.g. a left classification label vs the security name) is invisible
+            # to the single densest row above and collapses into the adjacent one;
+            # split such under-segmented columns back apart.
+            col_bounds = _refine_split_columns(row_groups, bounds)
 
     lines = []
     for row in rows:

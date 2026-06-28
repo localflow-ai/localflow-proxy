@@ -32,6 +32,7 @@ SAMPLE_FILES = [
     'VDK Catherine HP2G 10 06 2026.pdf',
     'val 01 06 2026.pdf',
     'description.pdf',
+    'CASINFANNUELLEMAV_1781859766472_20260325.pdf',
 ]
 
 
@@ -409,6 +410,44 @@ def test_vdk_noncharacter_space_normalised():
     full = '\n'.join(p['text'] for p in result['pages'])
     assert '￿' not in full and '￾' not in full
     assert 'Hoche Patrimoine Deuxième génération' in full
+
+
+# ---------------------------------------------------------------------------
+# Insurance holdings  (CASINFANNUELLEMAV…pdf) — a narrow leading "classification"
+# column (Actions / Mixtes / Autres) next to a security-name column that wraps
+# across rows.
+#
+# Regression: page 2's holdings table has no single row carrying both the
+# classification and the name (the classification sits on the value row; the
+# name wraps on its own rows), so the densest-row column grid never separated
+# them — the classification collapsed into the name column and the data mangled.
+# The under-segmented-column split (data-evidenced, leftmost column) restores the
+# classification as its own column.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope='module')
+def cardif():
+    return extract_pdf.extract(load('CASINFANNUELLEMAV_1781859766472_20260325.pdf'))
+
+
+def test_cardif_page_count(cardif):
+    assert cardif['metadata']['totalPdfPages'] == 13
+
+
+def test_cardif_classification_is_its_own_column(cardif):
+    text = page_text(cardif, 2)
+    # Six-column header: Classification | (name) | Nombre | Valeur | Montant | Répartition
+    assert "Classification |  | Nombre | Valeur de l'unité | Montant | Répartition" in text
+    # The classification value sits alone in column 1, the value cells align.
+    assert 'Actions |  | 127,5022 | 31,34 ¤ | 3 995,92 ¤ | 6,31%' in text
+    # A single-line holding: name in column 2 (classification empty), values aligned.
+    assert ' | BNP PARIBAS AQUA CLASSIC | 15,4648 | 652,85 ¤ | 10 096,19 ¤ | 15,95%' in text
+
+
+def test_cardif_classification_not_merged_into_name(cardif):
+    """Guard: the old merged form (classification glued to the first value) is gone."""
+    text = page_text(cardif, 2)
+    assert 'Actions | 127,5022' not in text
 
 
 # ---------------------------------------------------------------------------
