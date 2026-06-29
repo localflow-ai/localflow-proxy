@@ -806,6 +806,14 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
         // --- Authorization (see docs/permissions.md) ---
         const perms = req.permissions;   // null for admin = bypass
         if (!permHas(req, 'ai.use')) return denyPerm(res, 'ai.use');
+
+        // An absent modelId falls back to the configured default (isDefault), so a
+        // client can leave the choice to the proxy. Everything below uses this
+        // RESOLVED id — including the permission check, so a restricted session
+        // can't reach the default model unchecked.
+        const configs = loadLlmConfigs();
+        const modelId = request.modelId || configs.find(c => c.isDefault)?.id;
+
         if (perms) {
             const atts = (request.messages || []).flatMap(m => Array.isArray(m.attachments) ? m.attachments : []);
             for (const a of atts) {
@@ -814,8 +822,8 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
                 if (!isImage && !permHas(req, 'ai.attachFile')) return denyPerm(res, 'ai.attachFile');
             }
             if (request.apiKey && !permHas(req, 'ai.byok')) return denyPerm(res, 'ai.byok');
-            if (request.modelId && !(perms.models.includes('*') || perms.models.includes(request.modelId))) {
-                return res.status(403).json({ error: `Model not allowed: ${request.modelId}` });
+            if (modelId && !(perms.models.includes('*') || perms.models.includes(modelId))) {
+                return res.status(403).json({ error: `Model not allowed: ${modelId}` });
             }
             if (perms.limits.maxPromptChars != null) {
                 // Bound the user's own input only — the latest user message. Counting
@@ -832,11 +840,10 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
 
         let protocol, model, apiKey, baseUrl;
 
-        if (!request.modelId) return res.status(400).json({ error: 'Missing modelId' });
+        if (!modelId) return res.status(400).json({ error: 'Missing modelId' });
 
-        const configs = loadLlmConfigs();
-        const cfg = configs.find(c => c.id === request.modelId);
-        if (!cfg) return res.status(400).json({ error: `Unknown modelId: ${request.modelId}` });
+        const cfg = configs.find(c => c.id === modelId);
+        if (!cfg) return res.status(400).json({ error: `Unknown modelId: ${modelId}` });
 
         protocol = cfg.protocol;
         model = cfg.model;
@@ -845,7 +852,7 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
         apiKey = request.apiKey
             ? decrypt(request.apiKey, sessionInfo.orgId)
             : resolveBuiltInKey(cfg, req.session.type);
-        if (!apiKey) return res.status(400).json({ error: `No API key for model '${request.modelId}' with session type '${req.session.type}'. Please provide your own key.` });
+        if (!apiKey) return res.status(400).json({ error: `No API key for model '${modelId}' with session type '${req.session.type}'. Please provide your own key.` });
 
         logger.info('LLM proxy request protocol=%s model=%s', protocol, model);
 
