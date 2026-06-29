@@ -438,16 +438,21 @@ def test_cardif_classification_is_its_own_column(cardif):
     text = page_text(cardif, 2)
     # Six-column header: Classification | (name) | Nombre | Valeur | Montant | Répartition
     assert "Classification |  | Nombre | Valeur de l'unité | Montant | Répartition" in text
-    # The classification value sits alone in column 1, the value cells align.
-    assert 'Actions |  | 127,5022 | 31,34 ¤ | 3 995,92 ¤ | 6,31%' in text
+    # Classification alone in column 1; the wrapped security name is reassembled
+    # in full ("…MONDE ISR", its 2nd line reunited) on the value row, cells aligned.
+    assert 'Actions | BNP PARIBAS ACTIONS MONDE ISR | 127,5022 | 31,34 € | 3 995,92 € | 6,31%' in text
+    # A wrapped fund: its first name line is merged onto its value row.
+    assert ' | BNP PARIBAS BEST SELECTION | 369,6513 | 18,85 € | 6 967,93 € | 11,01%' in text
     # A single-line holding: name in column 2 (classification empty), values aligned.
-    assert ' | BNP PARIBAS AQUA CLASSIC | 15,4648 | 652,85 ¤ | 10 096,19 ¤ | 15,95%' in text
+    assert ' | BNP PARIBAS AQUA CLASSIC | 15,4648 | 652,85 € | 10 096,19 € | 15,95%' in text
 
 
-def test_cardif_classification_not_merged_into_name(cardif):
-    """Guard: the old merged form (classification glued to the first value) is gone."""
+def test_cardif_no_blank_name_value_rows(cardif):
+    """Guard: value rows carry a name — neither the blank-name form nor the old
+    classification-glued-to-the-first-value form may return."""
     text = page_text(cardif, 2)
-    assert 'Actions | 127,5022' not in text
+    assert 'Actions | 127,5022' not in text   # classification glued to the first value
+    assert ' |  | 369,6513' not in text       # value row with an empty name cell
 
 
 # ---------------------------------------------------------------------------

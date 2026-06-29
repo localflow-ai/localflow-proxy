@@ -38,9 +38,25 @@ except ImportError:
     json.dump({'error': 'pdfplumber not installed. Run: pip3 install pdfplumber'}, sys.stdout)
     sys.exit(1)
 
+try:
+    from stopwords import STOPWORDS as _STOPWORDS
+except Exception:
+    _STOPWORDS = frozenset()  # list unavailable → prose detection off (legacy behaviour)
+
 _NOISE    = re.compile(r'Numéro de compte:|Nom du rapport:|^Page \d+ sur \d+$')
 _COL_GAP  = 5.5  # pt — minimum inter-column gap for word-based mode
 _ROW_YTOL = 3    # pt — max vertical distance to consider words on the same row
+_ROW_MERGE_OVL = 2  # pt — min vertical box overlap to pull a wrapped-name fragment
+                    # down onto the value row below it (see _merge_orphan_rows_down)
+# A wrapped cell (e.g. a 2-line security name) is vertically centred next to its
+# single-line value, so each of its lines is offset from the value by ~half a
+# line and the top-only grouping above splits them into separate rows. Two such
+# visual lines belong to the *same* logical row when their vertical extents
+# overlap by at least this fraction of the shorter line's height: a centred name
+# line overlaps the value line by ~0.4, while consecutive *distinct* table rows
+# (which always have leading between them) never overlap — so merging on this
+# signal reunites a name with its value without ever fusing real rows.
+_ROW_OVERLAP_FRAC = 0.30
 
 # Word splitting. Many PDFs encode spaces as gaps (no space glyph), and the gap
 # width scales with font size: a real space is ~0.25*fontsize, intra-word kerning
@@ -60,12 +76,55 @@ _WORD_KW  = {'x_tolerance': 3, 'y_tolerance': 3, 'x_tolerance_ratio': _X_TOL_RAT
 # touch a lone '.'/'-' cell or the ' | ' column separators.
 _PUNCT_FIX = re.compile(r'(\w) ([,.])')
 
-# A "value" cell: a number with the usual financial decoration (thousands marks,
-# decimals, %, currency, sign) and at least one digit, but no letters — so it
-# matches "127,5022", "3 995,92", "6,31%", "1'117'653", "150.74" but not a name,
-# an ISIN ("CH1335392721"), or a header word. Used to require that a column split
-# is evidenced by real data rows, not multi-line headers or chart-axis labels.
-_VALUE_RE = re.compile(r"^[\d.,'’\s%€$¤+\-]*\d[\d.,'’\s%€$¤+\-]*$")
+# --- Prose detection (so a justified paragraph can't define the column grid) ---
+# The word-based path sizes the column grid from the row with the most gap-groups.
+# A justified paragraph splits into one gap-group per word (its stretched spaces
+# exceed the column-gap threshold), so it can out-"column" a real table and force
+# the table onto a bogus grid. `_is_grid_prose` bars such a row from defining the
+# grid. It requires BOTH signals, because neither alone is sufficient:
+#
+#   1. Every gap-group is a single word. This is the signature of *justification*:
+#      it stretches every inter-word space past the column gap, so each word
+#      splits into its own group. A real table row — even a stop-word-heavy
+#      French header like «du capital | de liquidités» — keeps its multi-word
+#      labels tight in one cell, so it has at least one multi-word group.
+#   2. Stop-word density >= _PROSE_DENSITY — the share of tokens that are stop
+#      words. This separates prose from a wide row of single-token numbers/codes
+#      (also one-word-per-group, but ~zero stop words).
+#
+# Density alone fails on French statements: column headers («de liquidités»,
+# «du capital», «de titres») measure ~0.38 — *denser* than the prose we want to
+# drop (~0.29) — so no density threshold separates them. The single-word-groups
+# test is what tells a justified paragraph from a stop-word-dense header.
+#
+# Density tokens strip surrounding punctuation ("les," -> "les") but keep the
+# token whole otherwise (a code like "LU0823413074" stays one token, matching
+# nothing). To tune for a new document run `python3 scripts/prose_density.py
+# <pdf>`: it prints each contending row's groups, multi-word-group count and
+# density with the resulting verdict. Stop-word lists live in stopwords.py.
+_PROSE_DENSITY = 0.20
+_DENSITY_EDGE = re.compile(r"^[^0-9a-zà-ÿœ']+|[^0-9a-zà-ÿœ']+$")
+
+
+def _stopword_density(words) -> float:
+    """Share (0..1) of a row's whitespace tokens that are stop words."""
+    toks = [_DENSITY_EDGE.sub('', w['text'].lower()) for w in words]
+    toks = [t for t in toks if t]
+    if not toks:
+        return 0.0
+    return sum(1 for t in toks if t in _STOPWORDS) / len(toks)
+
+
+def _is_grid_prose(groups) -> bool:
+    """True if a row is justified running prose and so must not define the grid.
+
+    `groups` is the row's gap-groups (each a list of word dicts). See the block
+    comment above for why both signals — every group a single word, AND
+    stop-word density >= _PROSE_DENSITY — are required.
+    """
+    if any(len(g) >= 2 for g in groups):
+        return False
+    return _stopword_density([w for g in groups for w in g]) >= _PROSE_DENSITY
 
 
 def _normalize(text: str) -> str:
@@ -75,6 +134,12 @@ def _normalize(text: str) -> str:
     # "Hoche￿Patrimoine" / "2￿843￿528" come out glued. These code points are never
     # valid text — restore the intended space.
     text = text.replace('￿', ' ').replace('￾', ' ')
+    # The euro sign is sometimes mis-encoded as the generic currency sign ¤
+    # (U+00A4): a font draws € at the Latin-1 0xA4 slot but declares no ToUnicode
+    # map, so extraction faithfully decodes it as ¤. In this euro-denominated
+    # corpus ¤ always stands for €; restore it so the preview shows the real
+    # symbol and money parsers don't choke on it.
+    text = text.replace('¤', '€')
     return _PUNCT_FIX.sub(r'\1\2', text)
 
 
@@ -82,102 +147,133 @@ def _normalize(text: str) -> str:
 # Word-based helpers (fallback path)
 # ---------------------------------------------------------------------------
 
-def _refine_split_columns(row_groups, col_bounds):
-    """Split a derived column that actually holds two x-separated stacks of content.
+def _merge_orphan_rows_down(grid):
+    """Pull a wrapped-name fragment down onto the value row below it.
 
-    The densest-row grid (see `_words_to_text`) only sees columns present on that
-    one row, so it misses a column never populated on the same row as its
-    neighbours — e.g. a narrow left *classification* column (Actions / Mixtes /
-    Autres) whose label rows differ from the rows carrying the security name —
-    and that column collapses into the adjacent one.  Detect and re-split it,
-    tightly guarded so existing extractions stay byte-identical:
+    A multi-line cell (a wrapped security name) is vertically centred next to the
+    single-line value beside it, so the line-based grouping splits it into a
+    name-only row above, a value row whose name cell is blank, and a name-only row
+    below.  The blank-name value row is the form the LLM struggles with.  Merge
+    the *above* fragment down onto the value row, strictly guarded so it only
+    touches this case (the trailing fragment is left for the model to append):
 
-      * Only the *leftmost* column is considered (the observed shape: a row label
-        swallowed by the name).
-      * Geometry is read only from *tabular* rows (>= 3 populated columns), so
-        prose/title/sub-header rows — which span the page width and would paper
-        over the inter-column gap — don't corrupt it.
-      * The split needs a clean vertical stripe between SPLIT_GAP_MIN and
-        SPLIT_GAP_MAX wide (a moderate gap; a far wider void is a hanging indent,
-        not a column) that no group crosses.
-      * The two sides must be *vertically segregated* (never share a row — else
-        they're one cell, e.g. the currency-prefixed value "USD -0.01"), each
-        recur on >= 2 rows with real width, and each be evidenced by an actual
-        data row (a numeric value), not just multi-line headers / chart labels.
+      * one direction (down), into the row directly below;
+      * a row moves only if EVERY non-empty cell vertically overlaps the next row
+        (the "sticky" rule) — so a value row, whose just-merged name fragment no
+        longer reaches the next line, is never dragged further down;
+      * each cell moves only into an EMPTY cell below — stacked same-column text
+        (wrapped titles, multi-line headers) is left untouched, and nothing is
+        ever concatenated.
+
+    `grid` is a list of rows; each row is a list of cells; each cell is a list of
+    word dicts (kept so we can read their vertical extents).  Returns the merged
+    grid.
     """
-    SPLIT_GAP_MIN = 14.0   # pt — a real column separator, well above intra-cell gaps
-    SPLIT_GAP_MAX = 40.0   # pt — but a far wider void is a hanging indent (e.g. a
-                           # sub-total label vs an indented holding), not a column
+    def _ext(words):
+        return (min(w['top'] for w in words), max(w['bottom'] for w in words))
 
-    def _col_of(mid):
-        for i, (cx0, cx1) in enumerate(col_bounds):
-            if cx0 <= mid < cx1:
-                return i
-        return min(range(len(col_bounds)),
-                   key=lambda i: abs(mid - (col_bounds[i][0] + col_bounds[i][1]) / 2))
-
-    # Bucket gap-groups into columns, but only from rows that look tabular
-    # (>= 3 distinct columns populated). Each entry is (gx0, gx1, row_index).
-    # Also flag rows that carry a numeric value — a real column split must be
-    # evidenced by data, not by multi-line headers or chart-axis labels.
-    per_col = [[] for _ in col_bounds]
-    data_rows = set()
-    for ri, groups in enumerate(row_groups):
-        bucketed = []
-        for g in groups:
-            gx0 = min(w['x0'] for w in g)
-            gx1 = max(w['x1'] for w in g)
-            text = ' '.join(w['text'] for w in g)
-            if _VALUE_RE.match(text):
-                data_rows.add(ri)
-            bucketed.append((_col_of((gx0 + gx1) / 2), gx0, gx1))
-        if len({ci for ci, _, _ in bucketed}) < 3:
-            continue  # prose / header / total row — not column geometry
-        for ci, gx0, gx1 in bucketed:
-            per_col[ci].append((gx0, gx1, ri))
-
-    refined = []
-    for ci, ((cx0, cx1), groups) in enumerate(zip(col_bounds, per_col)):
-        split_x = None
-        # Only the leftmost column: the merged-label case is a narrow first
-        # column (a classification / row-label) swallowed by the security name.
-        # Restricting to column 0 matches that shape and keeps interior columns
-        # (and the diverse tables that have them) untouched.
-        if ci == 0 and len(groups) >= 3:
-            groups.sort(key=lambda t: t[0])
-            # Widest gap not crossed by any group (groups may overlap in x, so
-            # track a running right edge rather than comparing only neighbours).
-            cover_end = groups[0][1]
-            best_gap, best_at = 0.0, None
-            for gx0, gx1, _ in groups[1:]:
-                if gx0 - cover_end > best_gap:
-                    best_gap, best_at = gx0 - cover_end, (cover_end, gx0)
-                cover_end = max(cover_end, gx1)
-            if SPLIT_GAP_MIN <= best_gap <= SPLIT_GAP_MAX and best_at:
-                stripe = (best_at[0] + best_at[1]) / 2
-                left  = [(gx0, gx1, ri) for gx0, gx1, ri in groups if gx1 <= stripe]
-                right = [(gx0, gx1, ri) for gx0, gx1, ri in groups if gx0 >= stripe]
-                left_rows  = {ri for _, _, ri in left}
-                right_rows = {ri for _, _, ri in right}
-                MIN_BAND = 12.0  # pt — each side must be a real column, not a stray
-                if (left and right
-                        # vertical segregation: the two stacks never share a row
-                        # (else they're one cell, e.g. a currency-prefixed value),
-                        and not (left_rows & right_rows)
-                        # each side must recur and have real width — rejects a
-                        # one-off header word, a peeled page number, etc.
-                        and len(left_rows) >= 2 and len(right_rows) >= 2
-                        and max(b for _, b, _ in left)  - min(a for a, _, _ in left)  >= MIN_BAND
-                        and max(b for _, b, _ in right) - min(a for a, _, _ in right) >= MIN_BAND
-                        # evidenced by data on both sides — not a header/chart split
-                        and (left_rows & data_rows) and (right_rows & data_rows)):
-                    split_x = stripe
-        if split_x is not None:
-            refined.append((cx0, split_x))
-            refined.append((split_x, cx1))
+    out = [list(r) for r in grid]
+    i = 0
+    while i < len(out) - 1:
+        cur, nxt = out[i], out[i + 1]
+        nxt_words = [w for c in nxt for w in c]
+        nb = _ext(nxt_words) if nxt_words else None
+        can_move = nb is not None and any(cur) and all(
+            (not cell) or (
+                not nxt[ci]  # target cell must be free — no overwrite, no concat
+                and min(_ext(cell)[1], nb[1]) - max(_ext(cell)[0], nb[0]) >= _ROW_MERGE_OVL
+            )
+            for ci, cell in enumerate(cur)
+        )
+        if can_move:
+            for ci, cell in enumerate(cur):
+                if cell:
+                    nxt[ci] = cell
+            out.pop(i)  # cur merged into nxt; re-check the merged row (now at i)
         else:
-            refined.append((cx0, cx1))
-    return refined
+            i += 1
+    return out
+
+
+def _group_rows(words):
+    """Group words into logical rows, merging vertically-overlapping lines.
+
+    Two passes:
+      1. top-Y grouping (words within `_ROW_YTOL` of the row's first word), and
+      2. merge consecutive rows whose vertical extents overlap by at least
+         `_ROW_OVERLAP_FRAC` of the shorter row's height.
+
+    Pass 2 is what reunites a wrapped cell (a security name on two lines, each
+    offset ~half a line from the single-line value beside it) with its value:
+    each name line overlaps the value line, so the three visual lines collapse
+    into one logical row whose densest gap-grouping now *includes* the name —
+    giving the name a real column instead of an orphaned blank-name row.
+
+    Two guards keep it from fusing unrelated content:
+      * the vertical overlap must reach `_ROW_OVERLAP_FRAC` of the shorter line
+        — distinct table rows keep inter-row leading and never overlap; and
+      * the rows' horizontal extents must overlap too — a wrapped cell sits
+        *within* its row's column span, whereas a tall left-hand title and a
+        small right-hand running header overlap vertically yet live in separate
+        layout regions and must stay apart (else the header's "Numéro de
+        compte:" text would fold into the title row and take it down with the
+        _NOISE filter).
+
+    Returns rows ordered top-down; word order within a row is not significant
+    here (callers stringify cells in reading order).
+    """
+    sw = sorted(words, key=lambda w: w['top'])
+    rows = [[sw[0]]]
+    for w in sw[1:]:
+        if w['top'] - rows[-1][0]['top'] <= _ROW_YTOL:
+            rows[-1].append(w)
+        else:
+            rows.append([w])
+
+    merged = [rows[0]]
+    ptop = min(w['top'] for w in rows[0])
+    pbot = max(w['bottom'] for w in rows[0])
+    px0  = min(w['x0'] for w in rows[0])
+    px1  = max(w['x1'] for w in rows[0])
+    for r in rows[1:]:
+        rtop = min(w['top'] for w in r)
+        rbot = max(w['bottom'] for w in r)
+        rx0  = min(w['x0'] for w in r)
+        rx1  = max(w['x1'] for w in r)
+        overlap = min(pbot, rbot) - max(ptop, rtop)
+        shorter = min(pbot - ptop, rbot - rtop)
+        x_overlap = max(px0, rx0) < min(px1, rx1)
+        if shorter > 0 and overlap >= _ROW_OVERLAP_FRAC * shorter and x_overlap:
+            merged[-1].extend(r)
+            ptop, pbot = min(ptop, rtop), max(pbot, rbot)  # grow so a centred
+            px0,  px1  = min(px0, rx0), max(px1, rx1)       # value bridges both
+            #                                                halves of a name
+        else:
+            merged.append(r)
+            ptop, pbot, px0, px1 = rtop, rbot, rx0, rx1
+    return merged
+
+
+def _read_order(words):
+    """Words in human reading order: top-to-bottom by visual line, then left-to-right.
+
+    A merged row (see `_group_rows`) can carry several visual lines, so a cell
+    must be stringified by line first — otherwise a 2-line name sorted purely by
+    x interleaves ("BNP EUROPE PARIBAS CLASSIC CONVERTIBLES"). Lines are clustered
+    by top within `_ROW_YTOL` (not by rounding the coordinate, which would split a
+    line at an integer boundary and promote a slightly-raised superscript — e.g.
+    a "(2)" footnote marker — ahead of the word it annotates).
+    """
+    if not words:
+        return words
+    ws = sorted(words, key=lambda w: w['top'])
+    keyed, line, ref = [], 0, ws[0]['top']
+    for w in ws:
+        if w['top'] - ref > _ROW_YTOL:
+            line += 1
+            ref = w['top']
+        keyed.append((line, w['x0'], w))
+    return [w for _, _, w in sorted(keyed, key=lambda t: (t[0], t[1]))]
 
 
 def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
@@ -192,26 +288,29 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
     if not words:
         return ''
 
-    sorted_words = sorted(words, key=lambda w: w['top'])
-    rows = [[sorted_words[0]]]
-    for w in sorted_words[1:]:
-        if w['top'] - rows[-1][0]['top'] <= _ROW_YTOL:
-            rows[-1].append(w)
-        else:
-            rows.append([w])
+    rows = _group_rows(words)
 
     if left_margin is None:
         all_x0 = [sorted(row, key=lambda w: w['x0'])[0]['x0'] for row in rows]
         left_margin = min(all_x0) if all_x0 else 0
 
     def _gap_groups(row):
+        # Split at gaps measured against the running right edge of the group, not
+        # the immediately preceding word: a merged row (see `_group_rows`) carries
+        # several visual lines, so an x-sorted scan interleaves them, and a short
+        # line-2 word (e.g. a wrapped "ISR" under "BNP") would otherwise leave a
+        # false gap before the next line-1 word ("PARIBAS") and split one cell in
+        # two. Tracking the max x1 keeps such an overlapping name in one group.
         row = sorted(row, key=lambda w: w['x0'])
         groups = [[row[0]]]
-        for i in range(1, len(row)):
-            if row[i]['x0'] - row[i - 1]['x1'] >= _COL_GAP:
-                groups.append([row[i]])
+        cover = row[0]['x1']
+        for w in row[1:]:
+            if w['x0'] - cover >= _COL_GAP:
+                groups.append([w])
+                cover = w['x1']
             else:
-                groups[-1].append(row[i])
+                groups[-1].append(w)
+                cover = max(cover, w['x1'])
         return groups
 
     # Derive column X-bounds from the row with the most gap-detected columns.
@@ -220,30 +319,27 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
     col_bounds = None
     if derive_col_bounds:
         row_groups = [_gap_groups(r) for r in rows]
-        best_groups = max(row_groups, key=len, default=[])
+        # Size the grid from the densest row that is NOT justified prose — a
+        # justified paragraph would otherwise set one column per word. Fall back
+        # to every row if the whole region reads as prose.
+        candidates = [rg for rg in row_groups if not _is_grid_prose(rg)]
+        best_groups = max(candidates or row_groups, key=len, default=[])
         if len(best_groups) >= 3:
-            bounds = []
+            col_bounds = []
             for i, g in enumerate(best_groups):
                 gx0 = min(w['x0'] for w in g)
                 gx1 = max(w['x1'] for w in g)
                 left  = (max(w['x1'] for w in best_groups[i - 1]) + gx0) / 2 if i > 0 else 0
                 right = (gx1 + min(w['x0'] for w in best_groups[i + 1])) / 2 if i < len(best_groups) - 1 else 1e6
-                bounds.append((left, right))
-            # A column populated only on rows that never carry its neighbours
-            # (e.g. a left classification label vs the security name) is invisible
-            # to the single densest row above and collapses into the adjacent one;
-            # split such under-segmented columns back apart.
-            col_bounds = _refine_split_columns(row_groups, bounds)
+                col_bounds.append((left, right))
 
     lines = []
+    grid = []  # col_bounds path: rows of cells, each cell a list of word dicts
     for row in rows:
         row_sorted = sorted(row, key=lambda w: w['x0'])
         row_text = ' '.join(w['text'] for w in row_sorted)
         if _NOISE.search(row_text.strip()):
             continue
-
-        indent = row_sorted[0]['x0'] - left_margin
-        depth  = 0 if indent < 10 else (1 if indent < 60 else 2)
 
         if col_bounds:
             # Assign whole gap-groups — not individual words — to columns. A run of
@@ -251,7 +347,7 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
             # number like "8 629 202,44") must land in a single cell even when the
             # grid derived from data rows would slice through it: a wide total sits
             # across two data-row columns, and per-word binning would split it.
-            cols_words = [[] for _ in col_bounds]
+            cells = [[] for _ in col_bounds]
             for g in _gap_groups(row_sorted):
                 gx0 = min(w['x0'] for w in g)
                 gx1 = max(w['x1'] for w in g)
@@ -264,12 +360,22 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
                 if assigned is None:
                     assigned = min(range(len(col_bounds)),
                                    key=lambda i: abs(mid - (col_bounds[i][0] + col_bounds[i][1]) / 2))
-                cols_words[assigned].append(' '.join(w['text'] for w in g))
-            line = ' | '.join(' '.join(c) for c in cols_words)
+                cells[assigned].extend(g)  # keep the words — the merge needs their y
+            if any(cells):
+                grid.append(cells)
         else:
+            indent = row_sorted[0]['x0'] - left_margin
+            depth  = 0 if indent < 10 else (1 if indent < 60 else 2)
             groups = _gap_groups(row_sorted)
-            line = '  ' * depth + ' | '.join(' '.join(w['text'] for w in g) for g in groups)
+            line = '  ' * depth + ' | '.join(
+                ' '.join(w['text'] for w in _read_order(g)) for g in groups)
+            if line.strip():
+                lines.append(line)
 
+    # Pull wrapped-name fragments down onto their value rows before stringifying,
+    # so no blank-name value rows are left for the LLM to puzzle over.
+    for cells in _merge_orphan_rows_down(grid):
+        line = ' | '.join(' '.join(w['text'] for w in _read_order(c)) for c in cells)
         if line.strip():
             lines.append(line)
 
@@ -337,15 +443,15 @@ def _words_to_cols(words, col_bounds) -> str:
         else:
             rows.append([w])
 
-    lines = []
+    grid = []
     for row in rows:
-        cols = [[] for _ in col_bounds]
+        cells = [[] for _ in col_bounds]
         for w in sorted(row, key=lambda w: w['x0']):
             word_mid = (w['x0'] + w['x1']) / 2
             assigned = False
             for i, (cx0, cx1) in enumerate(col_bounds):
                 if cx0 <= word_mid <= cx1:
-                    cols[i].append(w['text'])
+                    cells[i].append(w)
                     assigned = True
                     break
             if not assigned:
@@ -353,11 +459,19 @@ def _words_to_cols(words, col_bounds) -> str:
                     range(len(col_bounds)),
                     key=lambda i: abs(word_mid - (col_bounds[i][0] + col_bounds[i][1]) / 2)
                 )
-                cols[nearest].append(w['text'])
+                cells[nearest].append(w)
+        if any(cells):
+            grid.append(cells)
 
-        col_texts = [' '.join(c) for c in cols]
-        if any(col_texts):
-            lines.append(' | '.join(col_texts))
+    # Same wrapped-cell reassembly as the word-based path: pull a row down onto
+    # the one below when every non-empty cell overlaps it and lands in an empty
+    # cell — so a borderless holdings table whose name wraps (value row left with
+    # a blank name) gets the name back too.
+    lines = []
+    for cells in _merge_orphan_rows_down(grid):
+        line = ' | '.join(' '.join(w['text'] for w in c) for c in cells)
+        if line.strip():
+            lines.append(line)
 
     return '\n'.join(ln for ln in lines if ln.strip())
 
