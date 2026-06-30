@@ -777,8 +777,8 @@ function resolveBuiltInKey(cfg, sessionType) {
 
 router.get('/common/llm-configs', asyncHandler(async (req, res) => {
     const configs = loadLlmConfigs();
-    const safe = configs.map(({ id, displayName, protocol, model, isDefault }) =>
-        ({ id, displayName, protocol, model, isDefault }));
+    const safe = configs.map(({ id, displayName, protocol, model, isDefault, size }) =>
+        ({ id, displayName, protocol, model, isDefault, size }));
     res.json(safe);
 }));
 
