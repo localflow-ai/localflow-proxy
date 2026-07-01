@@ -625,7 +625,7 @@ function maskKey(c, withLast4 = false) {
     return masked;
 }
 
-const LLM_PROTOCOLS = ['gemini', 'openai', 'anthropic'];
+const LLM_PROTOCOLS = ['gemini', 'openai', 'anthropic', 'ollama'];
 
 // --- Authorization / permissions (see docs/permissions.md) ----------------
 const PERMISSIONS_FILE = process.env.PERMISSIONS_FILE || path.join(__dirname, 'permissions.json');
@@ -777,8 +777,8 @@ function resolveBuiltInKey(cfg, sessionType) {
 
 router.get('/common/llm-configs', asyncHandler(async (req, res) => {
     const configs = loadLlmConfigs();
-    const safe = configs.map(({ id, displayName, protocol, model, isDefault, size }) =>
-        ({ id, displayName, protocol, model, isDefault, size }));
+    const safe = configs.map(({ id, displayName, protocol, model, isDefault, size, reasoningEffort }) =>
+        ({ id, displayName, protocol, model, isDefault, size, reasoningEffort }));
     res.json(safe);
 }));
 
@@ -854,7 +854,16 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
             : resolveBuiltInKey(cfg, req.session.type);
         if (!apiKey) return res.status(400).json({ error: `No API key for model '${modelId}' with session type '${req.session.type}'. Please provide your own key.` });
 
-        logger.info('LLM proxy request protocol=%s model=%s', protocol, model);
+        // Effective reasoning depth: an explicit request option overrides the
+        // model's configured default (`reasoningEffort` in llm-configs.json). Each
+        // _proxy* helper maps it to its protocol (Gemini thinking level, OpenAI
+        // reasoning_effort, Ollama `think`). 'low' turns thinking off on Ollama.
+        const reasoningEffort = request.options?.reasoningEffort ?? cfg.reasoningEffort;
+        if (reasoningEffort !== undefined) {
+            request.options = { ...request.options, reasoningEffort };
+        }
+
+        logger.info('LLM proxy request protocol=%s model=%s effort=%s', protocol, model, reasoningEffort ?? '-');
 
         let llmResponse;
         if (protocol === 'gemini') {
@@ -863,6 +872,8 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
             llmResponse = await _proxyOpenAI(request, model, apiKey, baseUrl);
         } else if (protocol === 'anthropic') {
             llmResponse = await _proxyAnthropic(request, model, apiKey, baseUrl);
+        } else if (protocol === 'ollama') {
+            llmResponse = await _proxyOllama(request, model, baseUrl);
         } else {
             return res.status(400).json({ error: `Unknown protocol: ${protocol}` });
         }
@@ -900,7 +911,10 @@ async function _proxyGemini(request, model, apiKey) {
         }),
         generation_config: {
             temperature: request.options?.temperature ?? 0.5,
-            ...(request.options?.thinking ? { thinking_config: { thinking_level: 'high', include_thoughts: true } } : {}),
+            ...(() => {
+                const level = request.options?.reasoningEffort ?? (request.options?.thinking ? 'high' : undefined);
+                return level ? { thinking_config: { thinking_level: level, include_thoughts: true } } : {};
+            })(),
             ...(request.options?.json    ? { response_mime_type: 'application/json' } : {}),
         },
     };
@@ -939,7 +953,8 @@ async function _proxyOpenAI(request, model, apiKey, baseUrl) {
         temperature: request.options?.temperature ?? 0.5,
     };
     if (request.options?.json)    body.response_format = { type: 'json_object' };
-    if (request.options?.thinking) body.thinking = { type: 'enabled' };
+    if (request.options?.reasoningEffort) body.reasoning_effort = request.options.reasoningEffort;
+    else if (request.options?.thinking) body.thinking = { type: 'enabled' };
     const res = await fetch(`${base}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -991,6 +1006,40 @@ async function _proxyAnthropic(request, model, apiKey, baseUrl) {
         text:    blocks.filter(b => b.type === 'text').map(b => b.text ?? '').join(''),
         thoughts: blocks.filter(b => b.type === 'thinking').map(b => b.thinking ?? '').join('') || undefined,
     };
+}
+
+// Ollama's NATIVE /api/chat — the only endpoint that can control a thinking
+// model's reasoning. Its OpenAI-compat /v1 silently ignores reasoning_effort /
+// think, so a thinking model (qwen3 etc.) always reasons there: slow, and its
+// <think> output breaks code-only parsing. reasoningEffort 'low' ⇒ think:false
+// (off), medium/high ⇒ on, unset ⇒ Ollama's default. No API key (local). Safe
+// mode already rejected attachments upstream, so they're not mapped here.
+async function _proxyOllama(request, model, baseUrl) {
+    const base = (baseUrl || 'http://localhost:11434').replace(/\/+$/, '').replace(/\/v1$/, '');
+    const level = request.options?.reasoningEffort;
+    const body = {
+        model: model || 'qwen3:8b',
+        messages: [
+            { role: 'system', content: request.system },
+            ...request.messages.map(m => ({ role: m.role, content: msgText(m) })),
+        ],
+        stream: false,
+        options: { temperature: request.options?.temperature ?? 0.2 },
+    };
+    if (level !== undefined) body.think = level !== 'low';
+    else if (request.options?.thinking === false) body.think = false;
+    if (request.options?.json) body.format = 'json';
+    const res = await fetch(`${base}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const err = await res.text().catch(() => '');
+        throw new Error(`Ollama [${res.status}]: ${err.slice(0, 300) || res.statusText}`);
+    }
+    const data = await res.json();
+    return { text: data.message?.content ?? '', thoughts: data.message?.thinking || undefined };
 }
 
 const normalizeForFuzzy = (str) => {
@@ -1346,6 +1395,9 @@ function validateLlmConfig(c, { partial } = {}) {
     if (!partial && (typeof c.model !== 'string' || !c.model.trim())) return 'model is required';
     if (c.displayName !== undefined && typeof c.displayName !== 'string') return 'displayName must be a string';
     if (c.baseUrl !== undefined && c.baseUrl !== '' && typeof c.baseUrl !== 'string') return 'baseUrl must be a string';
+    if (c.reasoningEffort !== undefined && c.reasoningEffort !== '' && !['low', 'medium', 'high'].includes(c.reasoningEffort)) {
+        return 'reasoningEffort must be one of low, medium, high';
+    }
     return null;
 }
 

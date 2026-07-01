@@ -55,7 +55,7 @@ All secrets — LLM keys, CRM credentials, master encryption key — live exclus
 
 - Token-based sessions with configurable sliding TTL (default 24 h) and up to 1 000 concurrent sessions
 - AES-256-GCM encryption with per-org key derivation from a single master key
-- Multi-LLM bridge: Gemini, OpenAI (and compatible), Anthropic — protocol resolved server-side by `modelId`
+- Multi-LLM bridge: Gemini, OpenAI (and compatible), Anthropic, Ollama (local) — protocol resolved server-side by `modelId`
 - Per-session-type built-in key scoping in `llm-configs.json` (e.g. demo key for public sessions only)
 - Hot-reloadable configuration: `config.json`, `llm-configs.json`, `api-config.json` — all reload on file change with no restart
 - API-key injection via query param, header, request body, or route placeholder
@@ -202,6 +202,15 @@ Two files, two distinct concerns — keep them straight:
     "protocol": "anthropic",
     "model": "claude-sonnet-4-6",
     "apiKey": ""
+  },
+  {
+    "id": "qwen-coder",
+    "displayName": "Qwen Coder (local)",
+    "protocol": "ollama",
+    "model": "qwen3:8b",
+    "baseUrl": "http://localhost:11434",
+    "size": "small",
+    "reasoningEffort": "low"
   }
 ]
 ```
@@ -210,10 +219,12 @@ Two files, two distinct concerns — keep them straight:
 |-------|-------------|
 | `id` | Unique identifier used by clients as `modelId`. |
 | `displayName` | Label shown in the UI. |
-| `protocol` | `"gemini"`, `"openai"`, or `"anthropic"`. |
+| `protocol` | `"gemini"`, `"openai"`, `"anthropic"`, or `"ollama"` (Ollama's native `/api/chat`, the only path that can control a thinking model). |
 | `model` | Provider model name forwarded in the API call. |
-| `baseUrl` | (OpenAI-compatible only) Override the API base URL, e.g. for MIMO or other compatible providers. |
-| `apiKey` | Server-side key. String form (`"key"`) applies to all sessions. Object form enables per-session-type control (see below). |
+| `baseUrl` | (OpenAI-compatible / Ollama only) Override the API base URL, e.g. for MIMO or other compatible providers, or a remote Ollama host. Defaults to `http://localhost:11434` for `ollama`. |
+| `apiKey` | Server-side key. String form (`"key"`) applies to all sessions. Object form enables per-session-type control (see below). Not needed for `ollama` (local). |
+| `size` | (Optional) Capability tier: `"small"` \| `"medium"` \| `"large"`. Reported to clients so they can pick prompt verbosity (a lean code-only protocol for `small` local models). |
+| `reasoningEffort` | (Optional) Default reasoning depth: `"low"` \| `"medium"` \| `"high"`. Applied server-side per protocol (Gemini thinking level, OpenAI `reasoning_effort`, Ollama `think`). `"low"` turns thinking **off** on Ollama — much faster for a code model. A request's `options.reasoningEffort` overrides it. |
 | `isDefault` | If `true`, clients use this model when none is specified. |
 
 **Per-session-type key scoping (`apiKey` object form):**
@@ -376,16 +387,18 @@ Forward a prompt to an LLM. The proxy resolves the model, protocol, and API key 
   "system": "You are a helpful assistant.",
   "messages": [{ "role": "user", "content": "Hello" }],
   "apiKey": "<optional encrypted BYOK key>",
-  "options": { "temperature": 0.5, "thinking": false, "json": false }
+  "options": { "temperature": 0.5, "thinking": false, "json": false, "reasoningEffort": "low" }
 }
 ```
+
+`options.reasoningEffort` (`"low"` | `"medium"` | `"high"`) overrides the model's configured default reasoning depth. It maps per protocol (Gemini thinking level, OpenAI `reasoning_effort`, Ollama `think`); `"low"` turns thinking off on Ollama's binary-thinking models.
 
 **Response:**
 ```json
 { "text": "...", "thoughts": "..." }
 ```
 
-Supported protocols: `gemini`, `openai` (and OpenAI-compatible endpoints), `anthropic`.
+Supported protocols: `gemini`, `openai` (and OpenAI-compatible endpoints), `anthropic`, `ollama` (native `/api/chat`).
 
 **Attachments.** A message may carry files for multimodal models:
 
@@ -514,7 +527,7 @@ Read and manage the API descriptor list (`api-config.json`). Responses mask `api
 
 #### `GET /admin/llm-config` / `POST /admin/llm-config` / `PUT /admin/llm-config/:id` / `DELETE /admin/llm-config/:id`
 
-Read and manage the LLM model list (`llm-configs.json`) — `{ id, displayName, protocol, model, baseUrl?, apiKey?, isDefault? }`. `POST`/`PUT` validate `protocol` (`gemini` / `openai` / `anthropic`) and require a `model`; setting `isDefault` clears it on the others. As with API configs, `apiKey` is masked to `"***"` in responses and an omitted (or `"***"`) `apiKey` on `PUT` keeps the existing key. Responses also include a display-only `apiKeyLast4` (the last 4 chars of the configured key) so admins can tell keys apart; it is never persisted. Changes apply immediately (hot-reload).
+Read and manage the LLM model list (`llm-configs.json`) — `{ id, displayName, protocol, model, baseUrl?, apiKey?, isDefault?, size?, reasoningEffort? }`. `POST`/`PUT` validate `protocol` (`gemini` / `openai` / `anthropic` / `ollama`), `reasoningEffort` (`low` / `medium` / `high` when set) and require a `model`; setting `isDefault` clears it on the others. As with API configs, `apiKey` is masked to `"***"` in responses and an omitted (or `"***"`) `apiKey` on `PUT` keeps the existing key. Responses also include a display-only `apiKeyLast4` (the last 4 chars of the configured key) so admins can tell keys apart; it is never persisted. Changes apply immediately (hot-reload).
 
 ---
 
