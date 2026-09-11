@@ -1082,6 +1082,130 @@ function extractWithPdfplumber(buffer) {
     });
 }
 
+// Same stdin/stdout contract as extractWithPdfplumber, but for .xlsx workbooks
+// (scripts/extract_xlsx.py, openpyxl — each sheet comes back as a "page").
+function extractWithOpenpyxl(buffer) {
+    return new Promise((resolve, reject) => {
+        const py = spawn(resolvePythonBin(), [path.join(__dirname, 'scripts/extract_xlsx.py')]);
+        let stdout = '';
+        let stderr = '';
+        py.stdout.on('data', d => { stdout += d; });
+        py.stderr.on('data', d => { stderr += d; });
+        py.stdin.on('error', () => {});
+        py.stdin.write(buffer);
+        py.stdin.end();
+        py.on('close', code => {
+            if (code !== 0) return reject(new Error(stderr.trim() || 'xlsx extraction script failed'));
+            try {
+                const result = JSON.parse(stdout);
+                if (result.error) return reject(new Error(result.error));
+                resolve(result);
+            } catch (e) {
+                reject(new Error('Invalid JSON from xlsx extractor'));
+            }
+        });
+        py.on('error', err => reject(new Error(`Failed to start Python: ${err.message}`)));
+    });
+}
+
+// Shared search + pagination over extracted pages (PDF pages or workbook sheets):
+// with search terms, keep matching pages ±1 context page and mark the gaps;
+// otherwise emit every page. Pages are separated by "## Page N" headers (a
+// page's optional `label` — e.g. a sheet name — is appended to its header).
+function formatPagesWithSearch(pages, searchString) {
+    const pagesContent = pages.map(p => ({
+        text: p.text,
+        label: p.label,
+        // A page's label (sheet name) is part of the searchable content.
+        normalized: normalizeForFuzzy(p.label ? `${p.label}\n${p.text}` : p.text)
+    }));
+    const header = (i) => `## Page ${i + 1}${pagesContent[i].label ? ` — "${pagesContent[i].label}"` : ''}`;
+
+    let finalContent = "";
+    const searchTerms = searchString
+        ? (Array.isArray(searchString) ? searchString : searchString.split(','))
+            .map(term => normalizeForFuzzy(term.trim()))
+            .filter(term => term.length > 0)
+        : [];
+
+    if (searchTerms.length > 0) {
+        const matchedIndices = new Set();
+        pagesContent.forEach((page, i) => {
+            const hasMatch = searchTerms.some(term => page.normalized.includes(term));
+            if (hasMatch) {
+                if (i > 0) matchedIndices.add(i - 1);
+                matchedIndices.add(i);
+                if (i < pagesContent.length - 1) matchedIndices.add(i + 1);
+            }
+        });
+
+        const sortedIndices = Array.from(matchedIndices).sort((a, b) => a - b);
+        let lastIdx = -1;
+        sortedIndices.forEach(idx => {
+            if (lastIdx !== -1 && idx !== lastIdx + 1) {
+                finalContent += `\n\n---\n[Omitted Content: Pages ${lastIdx + 2} to ${idx}]\n---\n\n`;
+            }
+            finalContent += `${header(idx)}\n\n${pagesContent[idx].text}\n\n`;
+            lastIdx = idx;
+        });
+    } else {
+        finalContent = pagesContent.map((p, i) => `${header(i)}\n\n${p.text}`).join('\n\n');
+    }
+
+    const returnedPages = (finalContent.match(/## Page/g) || []).length;
+    return { finalContent: finalContent.trim(), returnedPages };
+}
+
+// Format-generic document extraction: detects PDF vs Excel .xlsx from the
+// buffer's magic bytes and routes to the matching extractor. Reuses the
+// pdf.extract permission and the PDF throttler/limits.
+router.post('/common/extract-document', throttler,
+    (req, res, next) => {
+        express.raw({ type: '*/*', limit: '50mb' })(req, res, next);
+    },
+    asyncHandler(async (req, res) => {
+    if (!permHas(req, 'pdf.extract')) return denyPerm(res, 'pdf.extract');
+
+    if (!req.body || !req.body.length) return res.status(400).json({ error: 'Missing document in request body' });
+    const buffer = req.body;
+    if (req.permissions && req.permissions.limits.maxUploadBytes != null && buffer.length > req.permissions.limits.maxUploadBytes) {
+        return res.status(413).json({ error: `File exceeds the ${req.permissions.limits.maxUploadBytes}-byte limit.` });
+    }
+    const searchString = req.query.searchString;
+
+    const isPdf  = buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46; // %PDF
+    const isXlsx = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04; // PK..
+    if (!isPdf && !isXlsx) {
+        return res.status(415).json({ error: 'Unsupported document format — supported: PDF and Excel .xlsx' });
+    }
+
+    if (isPdf) {
+        const { pages, metadata } = await extractWithPdfplumber(buffer);
+        const { finalContent, returnedPages } = formatPagesWithSearch(pages, searchString);
+        pushEvent('pdf', { ip: getClientIp(req), pages: returnedPages });
+        return res.json({
+            success: true,
+            metadata,
+            returnedPages,
+            pageCount: metadata.totalPdfPages ?? returnedPages,
+            documentMetadata: { format: 'pdf' },
+            content: finalContent || "No matches found for the given search criteria."
+        });
+    }
+
+    const { pages, metadata } = await extractWithOpenpyxl(buffer);
+    const { finalContent, returnedPages } = formatPagesWithSearch(pages, searchString);
+    pushEvent('pdf', { ip: getClientIp(req), pages: returnedPages });
+    res.json({
+        success: true,
+        metadata,
+        returnedPages,
+        pageCount: metadata.totalSheets ?? returnedPages,
+        documentMetadata: { format: 'xlsx', pageNames: metadata.sheetNames ?? [] },
+        content: finalContent || "No matches found for the given search criteria."
+    });
+}));
+
 router.post('/common/extract-pdf', throttler,
     (req, res, next) => {
         const ct = req.headers['content-type'] || '';
@@ -1121,51 +1245,15 @@ router.post('/common/extract-pdf', throttler,
 
     // 2. Extract text via pdfplumber (layout-preserving, handles complex tables)
     const { pages: extractedPages, metadata: pdfMeta } = await extractWithPdfplumber(buffer);
-    const pagesContent = extractedPages.map(p => ({
-        text: p.text,
-        normalized: normalizeForFuzzy(p.text)
-    }));
 
-    // 3. Multi-Criteria Search Logic
-    let finalContent = "";
-    const searchTerms = searchString
-        ? (Array.isArray(searchString) ? searchString : searchString.split(','))
-            .map(term => normalizeForFuzzy(term.trim()))
-            .filter(term => term.length > 0)
-        : [];
-
-    if (searchTerms.length > 0) {
-        const matchedIndices = new Set();
-        pagesContent.forEach((page, i) => {
-            const hasMatch = searchTerms.some(term => page.normalized.includes(term));
-            if (hasMatch) {
-                if (i > 0) matchedIndices.add(i - 1);
-                matchedIndices.add(i);
-                if (i < pagesContent.length - 1) matchedIndices.add(i + 1);
-            }
-        });
-
-        const sortedIndices = Array.from(matchedIndices).sort((a, b) => a - b);
-        let lastIdx = -1;
-        sortedIndices.forEach(idx => {
-            if (lastIdx !== -1 && idx !== lastIdx + 1) {
-                finalContent += `\n\n---\n[Omitted Content: Pages ${lastIdx + 2} to ${idx}]\n---\n\n`;
-            }
-            finalContent += `## Page ${idx + 1}\n\n${pagesContent[idx].text}\n\n`;
-            lastIdx = idx;
-        });
-    } else {
-        finalContent = pagesContent.map((p, i) => `## Page ${i + 1}\n\n${p.text}`).join('\n\n');
-    }
-
-    // 4. Enhanced Response with Metadata
-    const returnedPages = (finalContent.match(/## Page/g) || []).length;
+    // 3+4. Shared search + pagination; response shape unchanged
+    const { finalContent, returnedPages } = formatPagesWithSearch(extractedPages, searchString);
     pushEvent('pdf', { ip: getClientIp(req), pages: returnedPages });
     res.json({
         success: true,
         metadata: pdfMeta,
         returnedPages,
-        content: finalContent.trim() || "No matches found for the given search criteria."
+        content: finalContent || "No matches found for the given search criteria."
     });
 }));
 

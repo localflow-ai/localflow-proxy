@@ -42,6 +42,7 @@ LocalFlow Proxy                 ← this repository
         │
         ├── /common/genai  ──────► LLM (Gemini or other)        [LLM bridge]
         ├── /common/api-proxy ───► Whitelisted external APIs     [API governance]
+        ├── /common/extract-document ► PDF/Excel extraction      [Edge services]
         ├── /common/extract-pdf ► PDF extraction (pdfplumber)    [Edge services]
         ├── /common/access-stats  Data flow tracking             [Monitoring]
         ├── /session             Auth + session management       [Security]
@@ -73,9 +74,10 @@ All secrets — LLM keys, CRM credentials, master encryption key — live exclus
 
 - Node.js 20+ (ARM-native build on Apple Silicon — install via nvm: `nvm install 20`)
 - npm 9+
-- Python 3 with `pdfplumber` installed — required for PDF extraction:
+- Python 3 with `pdfplumber` installed — required for PDF extraction — and
+  `openpyxl` for Excel extraction:
   ```bash
-  pip3 install pdfplumber
+  pip3 install pdfplumber openpyxl
   ```
 - A 32-byte (256-bit) master encryption key
 
@@ -429,9 +431,40 @@ Optional: `X-Proxy-API-Key: <encrypted BYOK key>` (decrypted by the proxy before
 
 ---
 
+#### `POST /common/extract-document`
+
+Format-generic document extraction: PDF or Excel `.xlsx`, detected from the
+buffer's magic bytes. Reuses the `pdf.extract` permission, throttler and upload
+limits. Excel extraction requires `openpyxl` (`pip3 install openpyxl`); each
+sheet is returned as a "page" of pipe-separated rows, and sheet names are
+searchable via `searchString`.
+
+```
+Content-Type: application/octet-stream
+Body: <raw document bytes>
+?searchString=invoice,total   (optional, comma-separated)
+```
+
+**Response** (`documentMetadata.pageNames` present for workbooks):
+```json
+{
+  "success": true,
+  "metadata": { ... },
+  "returnedPages": 2,
+  "pageCount": 2,
+  "documentMetadata": { "format": "xlsx", "pageNames": ["Sales", "Notes"] },
+  "content": "## Page 1 — \"Sales\"\n\n..."
+}
+```
+
+Unsupported formats return `415`.
+
+---
+
 #### `POST /common/extract-pdf`
 
-Extract text from a PDF, with optional keyword-based page filtering.
+Extract text from a PDF, with optional keyword-based page filtering. (Kept for
+deployed clients; new clients should prefer `/common/extract-document`.)
 
 **Binary upload:**
 ```
