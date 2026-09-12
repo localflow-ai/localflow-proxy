@@ -16,6 +16,9 @@ import sys
 MAX_ROWS_PER_SHEET = 5000
 
 
+import re
+
+
 def _cell(v):
     if v is None:
         return ''
@@ -24,23 +27,40 @@ def _cell(v):
         return v.date().isoformat()
     if isinstance(v, float) and v.is_integer():
         return str(int(v))
-    return str(v)
+    # One cell must stay one column of one line: newlines inside a cell would
+    # split the row, a literal '|' would shift columns; ▲/▼ are formatting glyphs.
+    return re.sub(r'\s+', ' ', str(v).replace('|', ' ').replace('▲', '').replace('▼', '')).strip()
 
 
 def extract(data: bytes) -> dict:
     from openpyxl import load_workbook
-    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    # Not read_only: we need ws.merged_cells to de-duplicate merged banners.
+    # (openpyxl cannot render number formats, so values stay raw here — the
+    # in-browser SheetJS extractor is the display-faithful primary path.)
+    wb = load_workbook(io.BytesIO(data), data_only=True)
     pages = []
     names = []
     for i, ws in enumerate(wb.worksheets, 1):
         names.append(ws.title)
+        # Merged regions: exports often duplicate the value into every covered
+        # cell — blank everything but the anchor so a banner appears once.
+        blanked = set()
+        for m in ws.merged_cells.ranges:
+            for r in range(m.min_row, m.max_row + 1):
+                for c in range(m.min_col, m.max_col + 1):
+                    if r == m.min_row and c == m.min_col:
+                        continue
+                    blanked.add((r, c))
         lines = []
         truncated = False
-        for r, row in enumerate(ws.iter_rows(values_only=True)):
-            if r >= MAX_ROWS_PER_SHEET:
+        for r, row in enumerate(ws.iter_rows(values_only=True), 1):
+            if r > MAX_ROWS_PER_SHEET:
                 truncated = True
                 break
-            cells = [_cell(v) for v in row]
+            cells = [
+                '' if (r, c) in blanked else _cell(v)
+                for c, v in enumerate(row, 1)
+            ]
             while cells and cells[-1] == '':
                 cells.pop()
             if not cells:
