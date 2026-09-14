@@ -1108,6 +1108,32 @@ function extractWithOpenpyxl(buffer) {
     });
 }
 
+// Same stdin/stdout contract, for .docx (scripts/extract_docx.py, python-docx —
+// the whole document comes back as one "page").
+function extractWithPythonDocx(buffer) {
+    return new Promise((resolve, reject) => {
+        const py = spawn(resolvePythonBin(), [path.join(__dirname, 'scripts/extract_docx.py')]);
+        let stdout = '';
+        let stderr = '';
+        py.stdout.on('data', d => { stdout += d; });
+        py.stderr.on('data', d => { stderr += d; });
+        py.stdin.on('error', () => {});
+        py.stdin.write(buffer);
+        py.stdin.end();
+        py.on('close', code => {
+            if (code !== 0) return reject(new Error(stderr.trim() || 'docx extraction script failed'));
+            try {
+                const result = JSON.parse(stdout);
+                if (result.error) return reject(new Error(result.error));
+                resolve(result);
+            } catch (e) {
+                reject(new Error('Invalid JSON from docx extractor'));
+            }
+        });
+        py.on('error', err => reject(new Error(`Failed to start Python: ${err.message}`)));
+    });
+}
+
 // Shared search + pagination over extracted pages (PDF pages or workbook sheets):
 // with search terms, keep matching pages ±1 context page and mark the gaps;
 // otherwise emit every page. Pages are separated by "## Page N" headers (a
@@ -1174,9 +1200,13 @@ router.post('/common/extract-document', throttler,
     const searchString = req.query.searchString;
 
     const isPdf  = buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46; // %PDF
-    const isXlsx = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04; // PK..
-    if (!isPdf && !isXlsx) {
-        return res.status(415).json({ error: 'Unsupported document format — supported: PDF and Excel .xlsx' });
+    // PK zip → peek at the entry names (stored uncompressed) to tell the
+    // Office formats apart; other zip-based formats (pptx, odt…) are rejected.
+    const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04; // PK..
+    const isXlsx = isZip && buffer.includes('xl/workbook.xml');
+    const isDocx = isZip && !isXlsx && buffer.includes('word/document.xml');
+    if (!isPdf && !isXlsx && !isDocx) {
+        return res.status(415).json({ error: 'Unsupported document format — supported: PDF, Excel .xlsx and Word .docx (legacy .doc: save as .docx)' });
     }
 
     if (isPdf) {
@@ -1189,6 +1219,20 @@ router.post('/common/extract-document', throttler,
             returnedPages,
             pageCount: metadata.totalPdfPages ?? returnedPages,
             documentMetadata: { format: 'pdf' },
+            content: finalContent || "No matches found for the given search criteria."
+        });
+    }
+
+    if (isDocx) {
+        const { pages, metadata } = await extractWithPythonDocx(buffer);
+        const { finalContent, returnedPages } = formatPagesWithSearch(pages, searchString);
+        pushEvent('pdf', { ip: getClientIp(req), pages: returnedPages });
+        return res.json({
+            success: true,
+            metadata,
+            returnedPages,
+            pageCount: metadata.totalPages ?? returnedPages,
+            documentMetadata: { format: 'docx' },
             content: finalContent || "No matches found for the given search criteria."
         });
     }
