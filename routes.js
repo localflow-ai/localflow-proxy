@@ -1095,7 +1095,12 @@ function extractWithOpenpyxl(buffer) {
         py.stdin.write(buffer);
         py.stdin.end();
         py.on('close', code => {
-            if (code !== 0) return reject(new Error(stderr.trim() || 'xlsx extraction script failed'));
+            if (code !== 0) {
+                // The script reports structured errors (e.g. "openpyxl is not
+                // installed") as JSON on stdout even when exiting non-zero.
+                try { const r = JSON.parse(stdout); if (r.error) return reject(new Error(r.error)); } catch { /* fall through */ }
+                return reject(new Error(stderr.trim() || 'xlsx extraction script failed'));
+            }
             try {
                 const result = JSON.parse(stdout);
                 if (result.error) return reject(new Error(result.error));
@@ -1121,7 +1126,10 @@ function extractWithPythonDocx(buffer) {
         py.stdin.write(buffer);
         py.stdin.end();
         py.on('close', code => {
-            if (code !== 0) return reject(new Error(stderr.trim() || 'docx extraction script failed'));
+            if (code !== 0) {
+                try { const r = JSON.parse(stdout); if (r.error) return reject(new Error(r.error)); } catch { /* fall through */ }
+                return reject(new Error(stderr.trim() || 'docx extraction script failed'));
+            }
             try {
                 const result = JSON.parse(stdout);
                 if (result.error) return reject(new Error(result.error));
