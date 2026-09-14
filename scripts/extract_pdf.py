@@ -425,6 +425,26 @@ def _is_blob_row(row_data):
     return date_blob or multiline_cols >= 2
 
 
+def _row_span_cols(row_words, col_bounds) -> int:
+    """How many distinct grid columns a row's words physically occupy (center-X).
+
+    Layout-based under-segmentation signal: when pdfplumber puts a whole row
+    into one cell but its words spread across several column bands, the row
+    needs word-based re-extraction. A genuine spanning label ("solde
+    précédent…", possibly with one amount) occupies 1-2 bands; a merged data
+    row (e.g. a short cash-position blob on a statement's last page — too few
+    lines and no dates for _is_blob_row) spans 3+.
+    """
+    hit = set()
+    for w in row_words:
+        mid = (w['x0'] + w['x1']) / 2
+        for i, (cx0, cx1) in enumerate(col_bounds):
+            if cx0 <= mid <= cx1:
+                hit.add(i)
+                break
+    return len(hit)
+
+
 def _words_to_cols(words, col_bounds) -> str:
     """Group words by Y into rows, assign each to a column by center-X.
 
@@ -492,19 +512,35 @@ def _extract_table(page, tbl, page_words_cache) -> list:
     lines = []
 
     for row_data, tbl_row in zip(tbl_data, tbl.rows):
-        if _is_blob_row(row_data) and col_bounds:
-            # Re-extract this row's Y range word-by-word into columns
+
+        def _row_words():
             non_none = [c for c in tbl_row.cells if c is not None]
-            if non_none:
-                y0 = min(c[1] for c in non_none)
-                y1 = max(c[3] for c in non_none)
-                if page_words_cache[0] is None:
-                    page_words_cache[0] = page.extract_words(**_WORD_KW)
-                row_words = [w for w in page_words_cache[0]
-                             if y0 <= w['top'] <= y1]
-                row_text = _words_to_cols(row_words, col_bounds)
-                if row_text:
-                    lines.append(row_text)
+            if not non_none:
+                return []
+            y0 = min(c[1] for c in non_none)
+            y1 = max(c[3] for c in non_none)
+            if page_words_cache[0] is None:
+                page_words_cache[0] = page.extract_words(**_WORD_KW)
+            return [w for w in page_words_cache[0] if y0 <= w['top'] <= y1]
+
+        row_words = None
+        reextract = _is_blob_row(row_data)
+        if not reextract and col_bounds and sum(1 for c in row_data if c) == 1:
+            # Single filled cell: either a genuine spanning label (keep as is)
+            # or an under-segmented merged row whose words physically spread
+            # across the grid (short cash blobs escape _is_blob_row's date and
+            # line-count signals) — decide by where the words actually sit.
+            row_words = _row_words()
+            if _row_span_cols(row_words, col_bounds) >= 3:
+                reextract = True
+
+        if reextract and col_bounds:
+            # Re-extract this row's Y range word-by-word into columns
+            if row_words is None:
+                row_words = _row_words()
+            row_text = _words_to_cols(row_words, col_bounds)
+            if row_text:
+                lines.append(row_text)
         else:
             # pdfplumber extracted this row cleanly — use its cell text directly
             cols = [' '.join((cell or '').split()) for cell in row_data]
