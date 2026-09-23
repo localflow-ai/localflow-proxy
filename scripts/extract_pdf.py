@@ -683,11 +683,31 @@ def _extract_page(page) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+# Chars set in symbol fonts extract as arbitrary Latin letters — e.g. a
+# section-marker triangle is the character 'u' in Wingdings 3, a fee marker is
+# 't' — polluting titles and misleading the anchor regexes formulas are told
+# to use. Detection is by FONT (never by character): real text never lives in
+# these fonts. The glyphs are REPLACED by '•', not dropped: some carry meaning
+# (a statement may explain "lines marked with <glyph> are fees"), so the
+# marker must survive — it just must not masquerade as a Latin letter.
+_SYMBOL_FONTS = re.compile(r'wingding|webding|dingbat|symbol|marlett', re.I)
+
+
+def _neutralize_symbol_glyphs(page):
+    try:
+        for ch in page.chars:  # cached list — mutation propagates to words/tables
+            if _SYMBOL_FONTS.search(ch.get('fontname') or ''):
+                ch['text'] = '•'
+    except Exception:
+        pass
+    return page
+
+
 def extract(data: bytes) -> dict:
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         pages = []
         for i, page in enumerate(pdf.pages, 1):
-            pages.append({'pageNum': i, 'text': _normalize(_extract_page(page))})
+            pages.append({'pageNum': i, 'text': _normalize(_extract_page(_neutralize_symbol_glyphs(page)))})
 
         meta = pdf.metadata or {}
         def m(key): return meta.get(key) or meta.get('/' + key) or None

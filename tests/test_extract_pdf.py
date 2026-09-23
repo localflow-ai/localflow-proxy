@@ -19,21 +19,12 @@ SAMPLES = os.path.join(os.path.dirname(__file__), '..', 'pdf-samples')
 # All sample PDFs exercised by the suite. pdf-samples/ is git-ignored (the files
 # are real, non-public statements), so a fresh checkout won't have them — tests
 # skip rather than fail when a sample is missing.
-SAMPLE_FILES = [
-    'nouveau-releve-compte.pdf',
-    'C92P006.pdf',
-    'C92P007.pdf',
-    'Investment_Management_Report_-Bankers-_20260504115703.pdf',
-    'Investment_Management_Report_-Bankers-_20260428180919.pdf',
-    'Javal Portfolio Review March 2026.pdf',
-    'Synthèse EdR EJ - 2026.03.31.pdf',
-    'SITUATION 066000133.pdf',
-    'RELEVE AEP AU 12 06 26.pdf',
-    'VDK Catherine HP2G 10 06 2026.pdf',
-    'val 01 06 2026.pdf',
-    'description.pdf',
-    'CASINFANNUELLEMAV_1781859766472_20260325.pdf',
-]
+# Every PDF in pdf-samples participates automatically — a hardcoded list let
+# new samples silently skip the baseline comparison.
+try:
+    SAMPLE_FILES = sorted(f for f in os.listdir(SAMPLES) if f.endswith('.pdf'))
+except OSError:  # samples absent (CI / fresh checkout) — tests skip via load()
+    SAMPLE_FILES = []
 
 
 def load(filename: str) -> bytes:
