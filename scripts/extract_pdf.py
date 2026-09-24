@@ -19,7 +19,10 @@
 #
 #   2. Word-based column detection (fallback for borderless pages):
 #      Groups words into rows by Y (3pt tolerance), splits each row into
-#      columns at gaps >= 5.5pt.  Rows are indented relative to the page's
+#      columns at gaps >= 5.5pt.  When ruled tables were discarded for
+#      coverage reasons, their column edges survive as split hints: a fused
+#      group is re-split where a ruling edge coincides with a word gap
+#      (fixes centered multi-line headers set closer than the gap threshold).  Rows are indented relative to the page's
 #      left content margin:
 #        depth 0 (no indent)  : within 10pt — section headers, titles
 #        depth 1 (2 spaces)   : 10–60pt     — sub-categories
@@ -276,7 +279,24 @@ def _read_order(words):
     return [w for _, _, w in sorted(keyed, key=lambda t: (t[0], t[1]))]
 
 
-def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
+def _split_group_at_hints(group, edges):
+    """Split one gap-group at ruling-line x-edges that fall inside a real
+    inter-word gap. Both signals must agree — the (discarded) table rulings say
+    a column boundary is here AND the words actually break there — so a number
+    with internal spaces ("8 629 202,44", no ruling through it) or a word that
+    straddles a ruling (no gap there) is never cut."""
+    ws = sorted(group, key=lambda w: w['x0'])
+    out = [[ws[0]]]
+    for a, b in zip(ws, ws[1:]):
+        lo, hi = a['x1'], b['x0']
+        if hi > lo and any(lo <= e <= hi for e in edges):
+            out.append([b])
+        else:
+            out[-1].append(b)
+    return out
+
+
+def _words_to_text(words, left_margin=None, derive_col_bounds=False, split_hints=None) -> str:
     """Convert words to indented pipe-separated column text (word-based fallback).
 
     derive_col_bounds: when True, infer a shared column grid from the row with
@@ -284,9 +304,29 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
     for full-page tabular content (Attempt 2 fallback).  Must be False for
     header/gap regions extracted from within a table-guided page, where the
     words are informational prose that should not be forced into a column grid.
+
+    split_hints: [((y0, y1), [edge_x, …]), …] — interior column boundaries of
+    ruled tables that were DISCARDED for coverage reasons (rulings drawn only
+    around a header band). Centered multi-line headers in those bands sit with
+    sub-_COL_GAP spacing between adjacent columns, so gap-grouping fuses them
+    ("Cours en Cours en Devise Devise EUR"); the rulings still know exactly
+    where the columns are, so groups in a hint band are re-split at ruling
+    edges that coincide with an inter-word gap.
     """
     if not words:
         return ''
+
+    def _hinted_groups(row_sorted):
+        groups = _gap_groups(row_sorted)
+        if not split_hints:
+            return groups
+        tops = [w['top'] for w in row_sorted]
+        row_y = sum(tops) / len(tops)
+        bounds = [bs for (y0, y1), bs in split_hints if y0 <= row_y <= y1]
+        if not bounds:
+            return groups
+        edges = [b[0] for bs in bounds for b in bs[1:]]
+        return [piece for g in groups for piece in _split_group_at_hints(g, edges)]
 
     rows = _group_rows(words)
 
@@ -332,6 +372,40 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
                 left  = (max(w['x1'] for w in best_groups[i - 1]) + gx0) / 2 if i > 0 else 0
                 right = (gx1 + min(w['x0'] for w in best_groups[i + 1])) / 2 if i < len(best_groups) - 1 else 1e6
                 col_bounds.append((left, right))
+            # If the discarded rulings describe the data rows too — every dense-
+            # row group nests inside a single ruling column — adopt the ruling
+            # grid: it carries the true column set, including columns the data
+            # leaves empty, so centered multi-line headers map one-to-one
+            # instead of colliding into the narrower data-derived grid.
+            if split_hints:
+                cand = max((bs for _, bs in split_hints), key=len)
+                if len(cand) >= len(col_bounds):
+                    def _ruling_col(g):
+                        gx0 = min(w['x0'] for w in g)
+                        gx1 = max(w['x1'] for w in g)
+                        return next((i for i, (rx0, rx1) in enumerate(cand)
+                                     if rx0 - 1 <= gx0 and gx1 <= rx1 + 1), None)
+                    homes = [_ruling_col(g) for g in best_groups]
+                    nested = [h for h in homes if h is not None]
+                    fit = len(nested) / len(best_groups)
+                    # Nesting alone is not enough: a ruling column WIDER than two
+                    # data columns would fuse them (each nests, both share a home).
+                    # And the dense row alone is not enough either — EVERY row
+                    # must keep its groups in distinct ruling columns, or a page
+                    # whose rulings under-segment some rows ("ISIN | EUR" both
+                    # under one ruled column) would regress on adoption.
+                    def _mid_col(g):
+                        mid = (min(w['x0'] for w in g) + max(w['x1'] for w in g)) / 2
+                        return next((i for i, (rx0, rx1) in enumerate(cand) if rx0 <= mid <= rx1), None)
+                    def _row_injective(rg):
+                        mids = [_mid_col(g) for g in rg]
+                        seen = [m for m in mids if m is not None]
+                        return len(set(seen)) == len(seen)
+                    all_injective = all(_row_injective(rg) for rg in row_groups)
+                    if fit >= 0.8 and len(set(nested)) == len(nested) and all_injective:
+                        col_bounds = [(0 if i == 0 else cand[i][0],
+                                       1e6 if i == len(cand) - 1 else cand[i][1])
+                                      for i in range(len(cand))]
 
     lines = []
     grid = []  # col_bounds path: rows of cells, each cell a list of word dicts
@@ -348,7 +422,7 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
             # grid derived from data rows would slice through it: a wide total sits
             # across two data-row columns, and per-word binning would split it.
             cells = [[] for _ in col_bounds]
-            for g in _gap_groups(row_sorted):
+            for g in _hinted_groups(row_sorted):
                 gx0 = min(w['x0'] for w in g)
                 gx1 = max(w['x1'] for w in g)
                 mid = (gx0 + gx1) / 2
@@ -366,7 +440,7 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False) -> str:
         else:
             indent = row_sorted[0]['x0'] - left_margin
             depth  = 0 if indent < 10 else (1 if indent < 60 else 2)
-            groups = _gap_groups(row_sorted)
+            groups = _hinted_groups(row_sorted)
             line = '  ' * depth + ' | '.join(
                 ' '.join(w['text'] for w in _read_order(g)) for g in groups)
             if line.strip():
@@ -616,6 +690,7 @@ def _extract_page(page) -> str:
 
     # Coverage guards: discard table detection and fall through to the word-based
     # path (which reads the whole page) when the detected tables would drop content.
+    split_hints = None
     if best_found:
         guard_words = page.extract_words(**_WORD_KW)
         # (a) A large share of words fall BELOW the last detected table — ruling
@@ -629,6 +704,16 @@ def _extract_page(page) -> str:
         #     the cells and getting lost). Word-based extraction reads them all.
         under_segmented = _word_col_count(guard_words) >= best_cols + 3
         if drop_below or under_segmented:
+            # The rulings stay trustworthy where they exist (typically a header
+            # band whose box excludes the data rows): keep their interior column
+            # edges as split hints for the word-based path, which otherwise fuses
+            # centered multi-line headers set closer than _COL_GAP.
+            hints = []
+            for t in best_found:
+                bounds = _col_bounds_from_table(t)
+                if bounds and len(bounds) >= 3:
+                    hints.append(((t.bbox[1] - 2, t.bbox[3] + 2), bounds))
+            split_hints = hints or None
             best_found = None
 
     if best_found:
@@ -672,7 +757,7 @@ def _extract_page(page) -> str:
     # --- Attempt 2: word-based column detection (borderless pages) ----------
     words = page.extract_words(**_WORD_KW)
     if words:
-        return _words_to_text(words, derive_col_bounds=True)
+        return _words_to_text(words, derive_col_bounds=True, split_hints=split_hints)
 
     # --- Attempt 3: plain text (scanned / image-only pages) ----------------
     text = page.extract_text(**_WORD_KW) or ''
