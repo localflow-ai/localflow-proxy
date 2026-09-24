@@ -198,6 +198,108 @@ def _merge_orphan_rows_down(grid):
     return out
 
 
+def _merge_adjacent_fragments(grid):
+    """Fold tightly-stacked single-cell fragments into their neighbor row.
+
+    Some layouts wrap a long first-column name as clean stacked lines with NO
+    vertical overlap (1-2pt leading): "NEUFLIZE EURO" / "TRANSATLANTIQUE MAI
+    <values>" / "2033". The overlap passes rightly ignore them — overlap is
+    what separates wrapped lines from distinct rows there. Here the signals
+    are different and all three are required:
+
+      * the fragment row has exactly ONE non-empty cell;
+      * the neighbor row's SAME cell is non-empty and starts at the same x0
+        (±1pt) — a centred header fragment or a differently-indented label
+        does not qualify;
+      * the vertical gap to the neighbor is <= 2pt — intra-cell line leading;
+        distinct rows carry more.
+    """
+    def _ext(words):
+        return (min(w['top'] for w in words), max(w['bottom'] for w in words))
+
+    out = [list(r) for r in grid]
+    i = 0
+    while i < len(out):
+        cur = out[i]
+        filled = [ci for ci, c in enumerate(cur) if c]
+        if len(filled) != 1:
+            i += 1
+            continue
+        ci = filled[0]
+        cx0 = min(w['x0'] for w in cur[ci])
+        ct, cb = _ext(cur[ci])
+        merged = False
+        # Below-fragments only: a trailing line under a value row is
+        # unambiguously a continuation, while a line ABOVE a value row is just
+        # as often a category label or a standalone info line (they precede
+        # rows at the same x0 and spacing) — folding those loses structure.
+        for j in (i - 1,):
+            if not (0 <= j < len(out)):
+                continue
+            nb = out[j]
+            # Neighbor must be a VALUE row (>=2 filled cells): folding label
+            # into label would glue stacked title/address blocks.
+            if not nb[ci] or sum(1 for c in nb if c) < 2:
+                continue
+            if abs(min(w['x0'] for w in nb[ci]) - cx0) > 1:
+                continue
+            nt, nb_bot = _ext([w for c in nb for w in c])
+            gap = max(nt - cb, ct - nb_bot)   # positive gap in whichever direction
+            if 0 <= gap <= 2:
+                nb[ci] = nb[ci] + cur[ci]
+                out.pop(i)
+                merged = True
+                break
+        if not merged:
+            i += 1
+    return out
+
+
+def _merge_orphan_rows_up(grid):
+    """Pull a TRAILING wrapped fragment up onto the value row above it.
+
+    The symmetric counterpart of _merge_orphan_rows_down: a 3-line wrapped name
+    centred on its value row leaves a fragment BELOW ("C ACC EUR*") that the
+    down pass cannot reach. Guards mirror the down pass with the target
+    condition inverted — this is an APPEND to an already-started cell:
+
+      * every non-empty cell of the fragment vertically overlaps the row above
+        (consecutive distinct table rows never overlap — leading separates them);
+      * each fragment cell lands in a NON-empty cell above (strictly "continue a
+        wrapped cell": a stray label over an unrelated empty column never merges);
+      * word dicts keep their y, so _read_order renders the appended line after
+        the lines already in the cell.
+    """
+    def _ext(words):
+        return (min(w['top'] for w in words), max(w['bottom'] for w in words))
+
+    out = [list(r) for r in grid]
+    i = 1
+    while i < len(out):
+        prev, cur = out[i - 1], out[i]
+        prev_words = [w for c in prev for w in c]
+        pb = _ext(prev_words) if prev_words else None
+        # Only a LONE fragment may climb into a VALUE row: a single filled cell
+        # in cur, two or more in prev. Without this, each merge extends the
+        # target's vertical reach and a whole value row can chain-merge into
+        # the row above it, fusing two distinct positions.
+        cur_filled = [ci for ci, c in enumerate(cur) if c]
+        prev_filled = sum(1 for c in prev if c)
+        can_move = (
+            pb is not None and len(cur_filled) == 1 and prev_filled >= 2
+            and bool(prev[cur_filled[0]])  # target must already hold the cell's earlier lines
+            and min(_ext(cur[cur_filled[0]])[1], pb[1]) - max(_ext(cur[cur_filled[0]])[0], pb[0]) >= _ROW_MERGE_OVL
+        )
+        if can_move:
+            for ci, cell in enumerate(cur):
+                if cell:
+                    prev[ci] = prev[ci] + cell
+            out.pop(i)  # cur merged into prev; keep i — next row now faces prev
+        else:
+            i += 1
+    return out
+
+
 def _group_rows(words):
     """Group words into logical rows, merging vertically-overlapping lines.
 
@@ -446,12 +548,38 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False, split_hints
             if line.strip():
                 lines.append(line)
 
-    # Pull wrapped-name fragments down onto their value rows before stringifying,
+    # Pull wrapped-name fragments onto their value rows before stringifying,
     # so no blank-name value rows are left for the LLM to puzzle over.
-    for cells in _merge_orphan_rows_down(grid):
+    merged = _merge_adjacent_fragments(_merge_orphan_rows_up(_merge_orphan_rows_down(grid)))
+
+    # Indentation depths for the grid path. Statements often stack several data
+    # kinds in the first (label) column — categories, sub-categories, security
+    # names — distinguished visually by small x-offsets (~4pt). Cluster the
+    # leading x0 of first-column rows; with 2+ levels, render the depth as
+    # leading spaces (2 per level), the same convention as the non-grid path —
+    # the system prompt already teaches formulas to classify lines by it.
+    lead_x = []
+    for cells in merged:
+        first = next((ci for ci, c in enumerate(cells) if c), None)
+        lead_x.append(min(w['x0'] for w in cells[first]) if first == 0 else None)
+    xs = sorted(x for x in lead_x if x is not None)
+    levels = []
+    for x in xs:
+        if not levels or x - levels[-1][-1] > 2:
+            levels.append([x])
+        else:
+            levels[-1].append(x)
+    level_of = {}
+    if len(levels) >= 2:
+        for depth, cluster in enumerate(levels):
+            for x in cluster:
+                level_of[x] = depth
+
+    for cells, lx in zip(merged, lead_x):
         line = ' | '.join(' '.join(w['text'] for w in _read_order(c)) for c in cells)
         if line.strip():
-            lines.append(line)
+            depth = level_of.get(lx, 0) if lx is not None else 0
+            lines.append('  ' * depth + line)
 
     return '\n'.join(lines)
 
@@ -560,7 +688,10 @@ def _words_to_cols(words, col_bounds) -> str:
     # Same wrapped-cell reassembly as the word-based path: pull a row down onto
     # the one below when every non-empty cell overlaps it and lands in an empty
     # cell — so a borderless holdings table whose name wraps (value row left with
-    # a blank name) gets the name back too.
+    # a blank name) gets the name back too. (Down-only here: the up/adjacency
+    # passes are scoped to the word-grid path, where the multi-line first-column
+    # problem actually lives — widening them to this path reshuffled every
+    # table-path document in the baseline suite.)
     lines = []
     for cells in _merge_orphan_rows_down(grid):
         line = ' | '.join(' '.join(w['text'] for w in c) for c in cells)

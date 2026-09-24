@@ -139,7 +139,7 @@ def test_portfolio_page2_ten_column_rows(portfolio):
     """
     text = page_text(portfolio, 2)
     isin_lines = [l for l in text.splitlines()
-                  if re.match(r'[A-Z]{2}[A-Z0-9]{10} \|', l)]
+                  if re.match(r' *[A-Z]{2}[A-Z0-9]{10} \|', l)]
     assert len(isin_lines) >= 10, 'expected at least 10 position rows'
     for line in isin_lines:
         assert line.count('|') == 9, f'wrong column count in: {line!r}'
@@ -212,7 +212,7 @@ def test_portfolio_page1_not_empty(portfolio):
     """Page 1 used to come back as header-only — it must contain position rows."""
     text = page_text(portfolio, 1)
     isin_lines = [l for l in text.splitlines()
-                  if re.match(r'[A-Z]{2}[A-Z0-9]{10} \|', l)]
+                  if re.match(r' *[A-Z]{2}[A-Z0-9]{10} \|', l)]
     assert len(isin_lines) >= 15, f'page 1 dropped data rows: only {len(isin_lines)} found'
 
 
@@ -252,7 +252,7 @@ def test_portfolio7_page1_has_positions(portfolio7):
     """Same page-1 coverage regression as C92P006."""
     text = page_text(portfolio7, 1)
     isin_lines = [l for l in text.splitlines()
-                  if re.match(r'[A-Z]{2}[A-Z0-9]{10} \|', l)]
+                  if re.match(r' *[A-Z]{2}[A-Z0-9]{10} \|', l)]
     assert len(isin_lines) >= 10, f'page 1 dropped data rows: only {len(isin_lines)} found'
 
 
@@ -432,8 +432,9 @@ def test_cardif_classification_is_its_own_column(cardif):
     # Classification alone in column 1; the wrapped security name is reassembled
     # in full ("…MONDE ISR", its 2nd line reunited) on the value row, cells aligned.
     assert 'Actions | BNP PARIBAS ACTIONS MONDE ISR | 127,5022 | 31,34 € | 3 995,92 € | 6,31%' in text
-    # A wrapped fund: its first name line is merged onto its value row.
-    assert ' | BNP PARIBAS BEST SELECTION | 369,6513 | 18,85 € | 6 967,93 € | 11,01%' in text
+    # A wrapped fund: all its name lines (incl. the trailing share-class line)
+    # are reassembled onto its value row.
+    assert ' | BNP PARIBAS BEST SELECTION ACTIONS EURO ISR C | 369,6513 | 18,85 € | 6 967,93 € | 11,01%' in text
     # A single-line holding: name in column 2 (classification empty), values aligned.
     assert ' | BNP PARIBAS AQUA CLASSIC | 15,4648 | 652,85 € | 10 096,19 € | 15,95%' in text
 
