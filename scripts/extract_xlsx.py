@@ -29,7 +29,7 @@ def _cell(v):
         return str(int(v))
     # One cell must stay one column of one line: newlines inside a cell would
     # split the row, a literal '|' would shift columns; ▲/▼ are formatting glyphs.
-    return re.sub(r'\s+', ' ', str(v).replace('|', ' ').replace('▲', '').replace('▼', '')).strip()
+    return re.sub(r'\s+', ' ', str(v).replace('|', '/').replace('▲', '').replace('▼', '')).strip()
 
 
 def extract(data: bytes) -> dict:

@@ -146,6 +146,20 @@ def _normalize(text: str) -> str:
     return _PUNCT_FIX.sub(r'\1\2', text)
 
 
+# '|' is RESERVED as the column separator in the pipe-separated output, so a
+# literal '|' in the source text — e.g. "Siemens AG | Namen", the Swiss/German
+# registered-share notation — must never reach a cell, or the sandbox's
+# splitCols() shreds the row. Replace it with a space (same convention as the
+# xlsx/docx extractors) and collapse whitespace. Applied at every point where
+# words or pdfplumber cells become a serialized cell string. The '|' glyph is
+# left in the word list for geometry — only the emitted text is sanitized.
+# Replaced with '/' (not a space): it preserves the source's visual-separator
+# intent ("Siemens AG / Namen") and reads better than a merge. Safe because a
+# literal '|' only ever occurs in text/name cells, never numeric ones.
+def _sanitize_cell(text):
+    return re.sub(r'\s+', ' ', text.replace('|', '/')).strip()
+
+
 # ---------------------------------------------------------------------------
 # Word-based helpers (fallback path)
 # ---------------------------------------------------------------------------
@@ -544,7 +558,7 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False, split_hints
             depth  = 0 if indent < 10 else (1 if indent < 60 else 2)
             groups = _hinted_groups(row_sorted)
             line = '  ' * depth + ' | '.join(
-                ' '.join(w['text'] for w in _read_order(g)) for g in groups)
+                _sanitize_cell(' '.join(w['text'] for w in _read_order(g))) for g in groups)
             if line.strip():
                 lines.append(line)
 
@@ -576,7 +590,7 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False, split_hints
                 level_of[x] = depth
 
     for cells, lx in zip(merged, lead_x):
-        line = ' | '.join(' '.join(w['text'] for w in _read_order(c)) for c in cells)
+        line = ' | '.join(_sanitize_cell(' '.join(w['text'] for w in _read_order(c))) for c in cells)
         if line.strip():
             depth = level_of.get(lx, 0) if lx is not None else 0
             lines.append('  ' * depth + line)
@@ -694,7 +708,7 @@ def _words_to_cols(words, col_bounds) -> str:
     # table-path document in the baseline suite.)
     lines = []
     for cells in _merge_orphan_rows_down(grid):
-        line = ' | '.join(' '.join(w['text'] for w in c) for c in cells)
+        line = ' | '.join(_sanitize_cell(' '.join(w['text'] for w in c)) for c in cells)
         if line.strip():
             lines.append(line)
 
@@ -748,7 +762,7 @@ def _extract_table(page, tbl, page_words_cache) -> list:
                 lines.append(row_text)
         else:
             # pdfplumber extracted this row cleanly — use its cell text directly
-            cols = [' '.join((cell or '').split()) for cell in row_data]
+            cols = [_sanitize_cell(cell or '') for cell in row_data]
             if any(c for c in cols):
                 lines.append(' | '.join(cols))
 

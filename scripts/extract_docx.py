@@ -16,7 +16,7 @@ import sys
 
 def _clean(s):
     # One cell/paragraph stays one line: collapse whitespace, neutralize '|'.
-    return re.sub(r'\s+', ' ', s.replace('|', ' ')).strip()
+    return re.sub(r'\s+', ' ', s.replace('|', '/')).strip()
 
 
 def _table_lines(table):
