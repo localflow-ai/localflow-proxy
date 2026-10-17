@@ -42,6 +42,16 @@ def page_text(result: dict, page_num: int) -> str:
     raise KeyError(f'page {page_num} not found')
 
 
+def tx_row(text: str, needle: str):
+    """Non-empty pipe-cells of the first line containing `needle` — robust to
+    the empty padding columns a finer grid adds, while still proving the fields
+    are separated (not merged into one cell)."""
+    for line in text.splitlines():
+        if needle in line:
+            return [c.strip() for c in line.split('|') if c.strip()]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Bank statement  (nouveau-releve-compte.pdf)
 # ---------------------------------------------------------------------------
@@ -74,8 +84,8 @@ def test_bank_stmt_page1_transactions(bank_stmt):
 
 def test_bank_stmt_page3_transactions(bank_stmt):
     text = page_text(bank_stmt, 3)
-    assert '14/06/10 | 14/06/10 | CARTE X3403 12/06 CREP PIERRE DORE | 36,40' in text
-    assert '29/06/10 | 29/06/10 | VIR RECU 9049406507 |  | 1 595,49' in text
+    assert tx_row(text, 'CREP PIERRE DORE') == ['14/06/10', '14/06/10', 'CARTE X3403 12/06 CREP PIERRE DORE', '36,40']
+    assert tx_row(text, 'VIR RECU 9049406507') == ['29/06/10', '29/06/10', 'VIR RECU 9049406507', '1 595,49']
 
 
 def test_bank_stmt_page5_columns_not_merged(bank_stmt):
@@ -89,9 +99,9 @@ def test_bank_stmt_page5_columns_not_merged(bank_stmt):
     five pipe-separated fields.
     """
     text = page_text(bank_stmt, 5)
-    assert '07/07/10 | 07/07/10 | CARTE X3403 06/07 CAMILLE ALBANE | 24,00' in text
-    assert '07/07/10 | 07/07/10 | CHEQUE 461 | 30,00' in text
-    assert '09/07/10 | 09/07/10 | CHEQUE 467 | 32,96' in text
+    assert tx_row(text, 'CAMILLE ALBANE') == ['07/07/10', '07/07/10', 'CARTE X3403 06/07 CAMILLE ALBANE', '24,00']
+    assert tx_row(text, 'CHEQUE 461') == ['07/07/10', '07/07/10', 'CHEQUE 461', '30,00']
+    assert tx_row(text, 'CHEQUE 467') == ['09/07/10', '09/07/10', 'CHEQUE 467', '32,96']
 
 
 def test_bank_stmt_page5_valeur_nature_not_merged(bank_stmt):

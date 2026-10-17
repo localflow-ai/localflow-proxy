@@ -810,7 +810,52 @@ def _word_col_count(words) -> int:
     return max((_ncols(r) for r in rows), default=0)
 
 
+# Completeness invariant. The ruling-table path drops words pdfplumber can't fit
+# into its inferred cells (irregular/incomplete rules); the word-based path
+# assigns EVERY word to a column, so it is complete by construction. We keep the
+# ruling path's cleaner structure ONLY when it loses nothing, and fall back to
+# the word path the instant it would drop content — never emitting a lossy
+# result. Tokens are compared split on whitespace + the separators '|' and '/'
+# (the latter is the sanitized content-pipe), so the column separator and the
+# '|'->'/' rewrite don't create false drops. Compared pre-_normalize (both
+# sides are raw here), so ¤->€ etc. can't skew it.
+_TOKEN_SPLIT = re.compile(r'[\s|/]+')
+
+
+def _page_tokens(text):
+    import collections
+    return collections.Counter(t for t in _TOKEN_SPLIT.split(text) if t)
+
+
+def _hints_from_tables(tables):
+    """Interior column bounds of ruled tables, as (y-band, bounds) split hints."""
+    hints = []
+    for t in tables:
+        bounds = _col_bounds_from_table(t)
+        if bounds and len(bounds) >= 3:
+            hints.append(((t.bbox[1] - 2, t.bbox[3] + 2), bounds))
+    return hints or None
+
+
 def _extract_page(page) -> str:
+    all_words = page.extract_words(**_WORD_KW)
+    full_tokens = _page_tokens(' '.join(w['text'] for w in all_words))
+
+    def _complete(text):
+        # True when `text` contains every source token (drops nothing).
+        return not (full_tokens - _page_tokens(text))
+
+    def _finish(text):
+        # Belt-and-suspenders: the word path is complete by construction, but
+        # guarantee it — append any token still missing, in reading order, so a
+        # future refactor can never silently start dropping content.
+        missing = full_tokens - _page_tokens(text)
+        if not missing:
+            return text
+        extra = [w['text'] for w in _read_order(all_words)
+                 if _page_tokens(w['text']) & missing]
+        return (text + '\n' + ' '.join(extra)).strip() if extra else text
+
     # --- Attempt 1: column-guided extraction using table line detection -----
     strategies = [
         {"vertical_strategy": "lines_strict", "horizontal_strategy": "lines_strict"},
@@ -837,7 +882,7 @@ def _extract_page(page) -> str:
     # path (which reads the whole page) when the detected tables would drop content.
     split_hints = None
     if best_found:
-        guard_words = page.extract_words(**_WORD_KW)
+        guard_words = all_words
         # (a) A large share of words fall BELOW the last detected table — ruling
         #     lines only around a header band, data rows underneath get dropped.
         last_bottom = max(t.bbox[3] for t in best_found)
@@ -853,12 +898,7 @@ def _extract_page(page) -> str:
             # band whose box excludes the data rows): keep their interior column
             # edges as split hints for the word-based path, which otherwise fuses
             # centered multi-line headers set closer than _COL_GAP.
-            hints = []
-            for t in best_found:
-                bounds = _col_bounds_from_table(t)
-                if bounds and len(bounds) >= 3:
-                    hints.append(((t.bbox[1] - 2, t.bbox[3] + 2), bounds))
-            split_hints = hints or None
+            split_hints = _hints_from_tables(best_found)
             best_found = None
 
     if best_found:
@@ -895,14 +935,31 @@ def _extract_page(page) -> str:
 
             lines.extend(_extract_table(page, tbl, page_words_cache))
 
-        result = '\n'.join(ln for ln in lines if ln.strip())
-        if result:
-            return result
+        # Footer: content BELOW the last table (symmetric to the header crop
+        # above the first). Without it, rows just past the last ruling line —
+        # a final holding, a totals/legend block — are silently lost.
+        last_table_bottom = max(t.bbox[3] for t in sorted_found)
+        if last_table_bottom < page.height - 2:
+            foot_words = page.crop((0, last_table_bottom, page.width, page.height)) \
+                             .extract_words(**_WORD_KW)
+            foot = _words_to_text(foot_words)
+            if foot:
+                lines.append(foot)
 
-    # --- Attempt 2: word-based column detection (borderless pages) ----------
-    words = page.extract_words(**_WORD_KW)
-    if words:
-        return _words_to_text(words, derive_col_bounds=True, split_hints=split_hints)
+        result = '\n'.join(ln for ln in lines if ln.strip())
+        # Keep the ruling structure ONLY if it lost nothing (clean tables, only
+        # surrounding text was outside the ruled region → now recovered by the
+        # header/gap/footer crops). If content was dropped INSIDE a table
+        # (pdfplumber's cell model failing on irregular rules), the table itself
+        # is unreliable → fall to the complete word path.
+        if result and _complete(result):
+            return result
+        if result and split_hints is None:
+            split_hints = _hints_from_tables(found)
+
+    # --- Attempt 2: word-based column detection (complete by construction) ---
+    if all_words:
+        return _finish(_words_to_text(all_words, derive_col_bounds=True, split_hints=split_hints))
 
     # --- Attempt 3: plain text (scanned / image-only pages) ----------------
     text = page.extract_text(**_WORD_KW) or ''
