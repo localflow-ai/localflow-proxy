@@ -1,0 +1,53 @@
+
+> daquota-proxy@1.0.0 dev
+> nodemon index.js
+
+[33m[nodemon] 3.1.14[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): *.*[39m
+[33m[nodemon] watching extensions: js,cjs,mjs[39m
+[32m[nodemon] starting `node index.js`[39m
+2026-10-19T16:31:06.271Z INFO [index] API Proxy running at http://localhost:3000
+2026-10-19T16:31:28.895Z INFO [config] Loaded proxy config from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/config.json
+2026-10-19T16:31:28.909Z INFO [routes] create new session
+2026-10-19T16:31:28.909Z INFO [public-connector] Public session initialized
+2026-10-19T16:31:28.944Z INFO [routes] request POST /common/genai
+2026-10-19T16:31:28.944Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 99
+2026-10-19T16:31:28.945Z INFO [routes] Loaded permissions from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/permissions.json
+2026-10-19T16:31:28.945Z INFO [routes] Loaded LLM configs from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/llm-configs.json
+2026-10-19T16:31:28.946Z INFO [routes] LLM proxy request protocol=gemini model=gemini-3-flash-preview effort=high
+2026-10-19T16:31:33.922Z INFO [routes] [gemini] finish=STOP prompt=34 thoughts=363 output=46 total=443
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `node index.js`[39m
+2026-10-19T16:32:11.107Z INFO [index] API Proxy running at http://localhost:3000
+2026-10-19T16:32:25.899Z INFO [config] Loaded proxy config from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/config.json
+2026-10-19T16:32:25.908Z INFO [routes] create new session
+2026-10-19T16:32:25.908Z INFO [public-connector] Public session initialized
+2026-10-19T16:32:25.941Z INFO [routes] request POST /common/genai
+2026-10-19T16:32:25.941Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 99
+2026-10-19T16:32:25.942Z INFO [routes] Loaded permissions from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/permissions.json
+2026-10-19T16:32:25.942Z INFO [routes] Loaded LLM configs from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/llm-configs.json
+2026-10-19T16:32:25.942Z INFO [routes] LLM proxy request protocol=gemini model=gemini-3-flash-preview effort=high
+2026-10-19T16:32:30.820Z INFO [routes] [gemini] finish=STOP prompt=34 thoughts=377 output=48 total=459
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `node index.js`[39m
+2026-10-19T16:33:22.992Z INFO [index] API Proxy running at http://localhost:3000
+2026-10-19T16:33:39.625Z INFO [config] Loaded proxy config from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/config.json
+2026-10-19T16:33:39.634Z INFO [routes] create new session
+2026-10-19T16:33:39.635Z INFO [public-connector] Public session initialized
+2026-10-19T16:33:39.674Z INFO [routes] request POST /common/genai
+2026-10-19T16:33:39.674Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 99
+2026-10-19T16:33:39.675Z INFO [routes] Loaded permissions from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/permissions.json
+2026-10-19T16:33:39.675Z INFO [routes] Loaded LLM configs from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/llm-configs.json
+2026-10-19T16:33:39.675Z INFO [routes] LLM proxy request protocol=gemini model=gemini-3-flash-preview effort=low
+2026-10-19T16:33:46.319Z INFO [routes] [gemini] finish=STOP prompt=38 thoughts=704 output=82 total=824
+2026-10-19T16:33:46.346Z INFO [routes] request POST /common/genai
+2026-10-19T16:33:46.346Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 98
+2026-10-19T16:33:46.347Z INFO [routes] LLM proxy request protocol=gemini model=gemini-3-flash-preview effort=high
+2026-10-19T16:33:53.220Z INFO [routes] [gemini] finish=STOP prompt=38 thoughts=731 output=83 total=852
+2026-10-19T16:34:36.369Z INFO [routes] create new session
+2026-10-19T16:34:36.370Z INFO [public-connector] Public session initialized
+2026-10-19T16:34:36.408Z INFO [routes] request POST /common/genai
+2026-10-19T16:34:36.408Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 97
+2026-10-19T16:34:36.408Z INFO [routes] LLM proxy request protocol=gemini model=gemini-3-flash-preview effort=-
+2026-10-19T16:35:29.193Z INFO [routes] [gemini] finish=STOP prompt=69 thoughts=761 output=15198 total=16028

@@ -896,7 +896,10 @@ function msgText(m) {
 
 async function _proxyGemini(request, model, apiKey) {
     const modelId = model || 'gemini-3-flash-preview';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+    // Key goes in the x-goog-api-key header, NOT the ?key= query param: URLs leak
+    // into logs, error messages and intermediary proxies — a secret must never
+    // ride in one (see CLAUDE.md "mask secrets").
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
     const body = {
         system_instruction: { parts: [{ text: request.system }] },
         contents: request.messages.map(m => {
@@ -926,13 +929,20 @@ async function _proxyGemini(request, model, apiKey) {
             };
         })(),
     };
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body) });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(`Gemini [${res.status}]: ${err.error?.message ?? res.statusText}`);
     }
     const data = await res.json();
     const cand = data.candidates?.[0];
+    // Diagnostic: see the output-budget split (thinking vs response). If
+    // thoughtsTokenCount approaches max_output_tokens while candidatesTokenCount
+    // stays small, the thinking is starving the formula — bound the thinking.
+    const u = data.usageMetadata || {};
+    logger.info('[gemini] finish=%s prompt=%d thoughts=%d output=%d total=%d',
+        cand?.finishReason, u.promptTokenCount ?? 0, u.thoughtsTokenCount ?? 0,
+        u.candidatesTokenCount ?? 0, u.totalTokenCount ?? 0);
     // A truncated response is invalid JSON downstream; surface a clear reason
     // instead of letting the client fail with a cryptic parse error.
     if (cand?.finishReason === 'MAX_TOKENS') {
