@@ -909,14 +909,22 @@ async function _proxyGemini(request, model, apiKey) {
             if (parts.length === 0) parts.push({ text: '' });
             return { role: m.role === 'assistant' ? 'model' : 'user', parts };
         }),
-        generation_config: {
-            temperature: request.options?.temperature ?? 0.5,
-            ...(() => {
-                const level = request.options?.reasoningEffort ?? (request.options?.thinking ? 'high' : undefined);
-                return level ? { thinking_config: { thinking_level: level, include_thoughts: true } } : {};
-            })(),
-            ...(request.options?.json    ? { response_mime_type: 'application/json' } : {}),
-        },
+        generation_config: (() => {
+            const level = request.options?.reasoningEffort ?? (request.options?.thinking ? 'high' : undefined);
+            return {
+                temperature: request.options?.temperature ?? 0.5,
+                // Gemini sets NO output cap by default AND shares this budget
+                // between thinking and the response. A large generated formula
+                // (metadata-first code-gen can run to hundreds of lines) plus
+                // high-level thinking overruns the model default, so the JSON is
+                // truncated mid-formula and the client's parse fails. Set it
+                // explicitly and generously — mirrors the OpenAI path's
+                // max_tokens, scaled up because thinking eats into the same budget.
+                max_output_tokens: level ? 32768 : 16384,
+                ...(level ? { thinking_config: { thinking_level: level, include_thoughts: true } } : {}),
+                ...(request.options?.json    ? { response_mime_type: 'application/json' } : {}),
+            };
+        })(),
     };
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) {
@@ -924,7 +932,13 @@ async function _proxyGemini(request, model, apiKey) {
         throw new Error(`Gemini [${res.status}]: ${err.error?.message ?? res.statusText}`);
     }
     const data = await res.json();
-    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const cand = data.candidates?.[0];
+    // A truncated response is invalid JSON downstream; surface a clear reason
+    // instead of letting the client fail with a cryptic parse error.
+    if (cand?.finishReason === 'MAX_TOKENS') {
+        throw new Error('Gemini: response hit the output-token limit and was truncated (the generated analysis is too large). Raise max_output_tokens or simplify the request.');
+    }
+    const parts = cand?.content?.parts ?? [];
     return {
         text:    parts.filter(p => !p.thought && p.text).map(p => p.text).join(''),
         thoughts: parts.filter(p =>  p.thought && p.text).map(p => p.text).join('') || undefined,
