@@ -51,3 +51,38 @@
 2026-10-19T16:34:36.408Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 97
 2026-10-19T16:34:36.408Z INFO [routes] LLM proxy request protocol=gemini model=gemini-3-flash-preview effort=-
 2026-10-19T16:35:29.193Z INFO [routes] [gemini] finish=STOP prompt=69 thoughts=761 output=15198 total=16028
+2026-10-19T16:43:22.896Z DEBUG [session-manager] Running background cleanup of idle sessions
+2026-10-19T16:52:02.316Z INFO [routes] create new session
+2026-10-19T16:52:02.318Z INFO [public-connector] Public session initialized
+2026-10-19T16:52:02.324Z INFO [routes] request POST /common/extract-pdf
+2026-10-19T16:52:16.511Z INFO [routes] request POST /common/extract-pdf
+2026-10-19T16:52:17.015Z INFO [routes] request POST /common/genai
+2026-10-19T16:52:17.015Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 96
+2026-10-19T16:52:17.016Z INFO [routes] LLM proxy request protocol=gemini model=gemini-3-flash-preview effort=-
+2026-10-19T16:53:22.903Z DEBUG [session-manager] Running background cleanup of idle sessions
+2026-10-19T16:54:22.142Z INFO [routes] [gemini] finish=MAX_TOKENS prompt=15244 thoughts=31454 output=1298 total=47996
+2026-10-19T16:54:22.148Z ERROR [routes] LLM Proxy Error: Gemini: response hit the output-token limit and was truncated (the generated analysis is too large). Raise max_output_tokens or simplify the request.
+2026-10-19T16:56:40.080Z INFO [routes] create new session
+2026-10-19T16:56:40.080Z INFO [public-connector] Public session initialized
+2026-10-19T16:56:40.150Z INFO [routes] request POST /common/genai
+2026-10-19T16:56:40.150Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 95
+2026-10-19T16:56:40.179Z INFO [routes] request POST /common/genai
+2026-10-19T16:56:40.179Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 94
+2026-10-19T16:57:45.247Z INFO [routes] create new session
+2026-10-19T16:57:45.247Z INFO [public-connector] Public session initialized
+2026-10-19T16:57:45.340Z INFO [routes] request POST /common/genai
+2026-10-19T16:57:45.340Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 93
+2026-10-19T16:57:45.341Z INFO [routes] request POST /common/genai
+2026-10-19T16:57:45.342Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 92
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `node index.js`[39m
+2026-10-19T16:59:33.017Z INFO [index] API Proxy running at http://localhost:3000
+2026-10-19T16:59:49.351Z INFO [config] Loaded proxy config from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/config.json
+2026-10-19T16:59:49.360Z INFO [routes] create new session
+2026-10-19T16:59:49.360Z INFO [public-connector] Public session initialized
+2026-10-19T16:59:49.383Z INFO [routes] request POST /common/genai
+2026-10-19T16:59:49.384Z DEBUG [routes] IP: ::1 | GenAI quota remaining: 99
+2026-10-19T16:59:49.384Z INFO [routes] Loaded permissions from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/permissions.json
+2026-10-19T16:59:49.386Z INFO [routes] Loaded LLM configs from /Users/renaudpawlak/Development/git/localflow/localflow-proxy/llm-configs.json
+2026-10-19T16:59:49.386Z INFO [routes] LLM proxy request protocol=gemini model=gemini-3-flash-preview effort=-
+2026-10-19T16:59:53.277Z INFO [routes] [gemini] finish=STOP prompt=16 thoughts=273 output=5 total=294

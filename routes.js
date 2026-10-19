@@ -917,13 +917,14 @@ async function _proxyGemini(request, model, apiKey) {
             return {
                 temperature: request.options?.temperature ?? 0.5,
                 // Gemini sets NO output cap by default AND shares this budget
-                // between thinking and the response. A large generated formula
-                // (metadata-first code-gen can run to hundreds of lines) plus
-                // high-level thinking overruns the model default, so the JSON is
-                // truncated mid-formula and the client's parse fails. Set it
-                // explicitly and generously — mirrors the OpenAI path's
-                // max_tokens, scaled up because thinking eats into the same budget.
-                max_output_tokens: level ? 32768 : 16384,
+                // between thinking and the response. Measured on a real complex
+                // document: thinking alone used 31k tokens (it scales hard with
+                // prompt complexity, and on gemini-3 neither thinking_budget —
+                // silently ignored — nor thinking_level meaningfully bounds it).
+                // So with thinking on, the cap must cover thinking (~30k) PLUS a
+                // large generated formula (~8-10k) → use the model's full output
+                // ceiling. Without thinking, a generous cap for the formula alone.
+                max_output_tokens: level ? 65536 : 16384,
                 ...(level ? { thinking_config: { thinking_level: level, include_thoughts: true } } : {}),
                 ...(request.options?.json    ? { response_mime_type: 'application/json' } : {}),
             };
