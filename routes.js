@@ -912,42 +912,49 @@ async function _proxyGemini(request, model, apiKey) {
             if (parts.length === 0) parts.push({ text: '' });
             return { role: m.role === 'assistant' ? 'model' : 'user', parts };
         }),
-        generation_config: (() => {
-            const level = request.options?.reasoningEffort ?? (request.options?.thinking ? 'high' : undefined);
-            return {
-                temperature: request.options?.temperature ?? 0.5,
-                // Gemini sets NO output cap by default AND shares this budget
-                // between thinking and the response. Measured on a real complex
-                // document: thinking alone used 31k tokens (it scales hard with
-                // prompt complexity, and on gemini-3 neither thinking_budget —
-                // silently ignored — nor thinking_level meaningfully bounds it).
-                // So with thinking on, the cap must cover thinking (~30k) PLUS a
-                // large generated formula (~8-10k) → use the model's full output
-                // ceiling. Without thinking, a generous cap for the formula alone.
-                max_output_tokens: level ? 65536 : 16384,
-                ...(level ? { thinking_config: { thinking_level: level, include_thoughts: true } } : {}),
-                ...(request.options?.json    ? { response_mime_type: 'application/json' } : {}),
-            };
-        })(),
     };
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body) });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(`Gemini [${res.status}]: ${err.error?.message ?? res.statusText}`);
-    }
-    const data = await res.json();
-    const cand = data.candidates?.[0];
-    // Diagnostic: see the output-budget split (thinking vs response). If
-    // thoughtsTokenCount approaches max_output_tokens while candidatesTokenCount
-    // stays small, the thinking is starving the formula — bound the thinking.
-    const u = data.usageMetadata || {};
-    logger.info('[gemini] finish=%s prompt=%d thoughts=%d output=%d total=%d',
-        cand?.finishReason, u.promptTokenCount ?? 0, u.thoughtsTokenCount ?? 0,
-        u.candidatesTokenCount ?? 0, u.totalTokenCount ?? 0);
-    // A truncated response is invalid JSON downstream; surface a clear reason
-    // instead of letting the client fail with a cryptic parse error.
-    if (cand?.finishReason === 'MAX_TOKENS') {
-        throw new Error('Gemini: response hit the output-token limit and was truncated (the generated analysis is too large). Raise max_output_tokens or simplify the request.');
+    const level = request.options?.reasoningEffort ?? (request.options?.thinking ? 'high' : undefined);
+    // Gemini sets NO output cap by default AND shares this budget between
+    // thinking and the response. The thinking volume is STOCHASTIC and
+    // unboundable on gemini-3 (thinking_budget silently ignored, thinking_level
+    // doesn't meaningfully bound it): the same prompt thinks 2k tokens on one
+    // run and 63k on the next, blowing even the model's full 65536 output
+    // ceiling and truncating the response mid-JSON. So: first attempt with
+    // thinking at the full ceiling; if thinking starves the output
+    // (finish=MAX_TOKENS), retry ONCE at thinking_level 'low', still at the
+    // full ceiling — a fresh sample almost never spirals twice, and the model
+    // thinks by default even with no thinking_config, so dropping the config
+    // (with its smaller cap) would NOT remove the risk; max headroom does.
+    const attempts = level ? [level, 'low'] : [undefined];
+    let cand;
+    for (const [i, lvl] of attempts.entries()) {
+        body.generation_config = {
+            temperature: request.options?.temperature ?? 0.5,
+            max_output_tokens: lvl ? 65536 : 16384,
+            ...(lvl ? { thinking_config: { thinking_level: lvl, include_thoughts: true } } : {}),
+            ...(request.options?.json ? { response_mime_type: 'application/json' } : {}),
+        };
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body) });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(`Gemini [${res.status}]: ${err.error?.message ?? res.statusText}`);
+        }
+        const data = await res.json();
+        cand = data.candidates?.[0];
+        // Diagnostic: see the output-budget split (thinking vs response).
+        const u = data.usageMetadata || {};
+        logger.info('[gemini] finish=%s prompt=%d thoughts=%d output=%d total=%d',
+            cand?.finishReason, u.promptTokenCount ?? 0, u.thoughtsTokenCount ?? 0,
+            u.candidatesTokenCount ?? 0, u.totalTokenCount ?? 0);
+        if (cand?.finishReason !== 'MAX_TOKENS') break;
+        if (i < attempts.length - 1) {
+            logger.warn('[gemini] thinking starved the output (thoughts=%d of %d) — retrying at thinking_level=low',
+                u.thoughtsTokenCount ?? 0, body.generation_config.max_output_tokens);
+            continue;
+        }
+        // A truncated response is invalid JSON downstream; surface a clear
+        // reason instead of letting the client fail with a cryptic parse error.
+        throw new Error('Gemini: response hit the output-token limit and was truncated (the generated analysis is too large), even after a no-thinking retry.');
     }
     const parts = cand?.content?.parts ?? [];
     return {
