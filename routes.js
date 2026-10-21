@@ -919,42 +919,34 @@ async function _proxyGemini(request, model, apiKey) {
     // unboundable on gemini-3 (thinking_budget silently ignored, thinking_level
     // doesn't meaningfully bound it): the same prompt thinks 2k tokens on one
     // run and 63k on the next, blowing even the model's full 65536 output
-    // ceiling and truncating the response mid-JSON. So: first attempt with
-    // thinking at the full ceiling; if thinking starves the output
-    // (finish=MAX_TOKENS), retry ONCE at thinking_level 'low', still at the
-    // full ceiling — a fresh sample almost never spirals twice, and the model
-    // thinks by default even with no thinking_config, so dropping the config
-    // (with its smaller cap) would NOT remove the risk; max headroom does.
-    const attempts = level ? [level, 'low'] : [undefined];
-    let cand;
-    for (const [i, lvl] of attempts.entries()) {
-        body.generation_config = {
-            temperature: request.options?.temperature ?? 0.5,
-            max_output_tokens: lvl ? 65536 : 16384,
-            ...(lvl ? { thinking_config: { thinking_level: lvl, include_thoughts: true } } : {}),
-            ...(request.options?.json ? { response_mime_type: 'application/json' } : {}),
-        };
-        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body) });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(`Gemini [${res.status}]: ${err.error?.message ?? res.statusText}`);
-        }
-        const data = await res.json();
-        cand = data.candidates?.[0];
-        // Diagnostic: see the output-budget split (thinking vs response).
-        const u = data.usageMetadata || {};
-        logger.info('[gemini] finish=%s prompt=%d thoughts=%d output=%d total=%d',
-            cand?.finishReason, u.promptTokenCount ?? 0, u.thoughtsTokenCount ?? 0,
-            u.candidatesTokenCount ?? 0, u.totalTokenCount ?? 0);
-        if (cand?.finishReason !== 'MAX_TOKENS') break;
-        if (i < attempts.length - 1) {
-            logger.warn('[gemini] thinking starved the output (thoughts=%d of %d) — retrying at thinking_level=low',
-                u.thoughtsTokenCount ?? 0, body.generation_config.max_output_tokens);
-            continue;
-        }
-        // A truncated response is invalid JSON downstream; surface a clear
-        // reason instead of letting the client fail with a cryptic parse error.
-        throw new Error('Gemini: response hit the output-token limit and was truncated (the generated analysis is too large), even after a no-thinking retry.');
+    // ceiling and truncating the response mid-JSON (finish=MAX_TOKENS).
+    // Deliberate policy: NO silent degraded retry (e.g. thinking_level 'low',
+    // measured thoughts=0) — a low-thinking formula is typically poor, and the
+    // multi-turn refinement rules then anchor every later fix on it, poisoning
+    // the whole conversation. Fail honestly instead: the client does NOT record
+    // the failed turn, the user sees why, rephrases, and retries at full depth.
+    body.generation_config = {
+        temperature: request.options?.temperature ?? 0.5,
+        max_output_tokens: level ? 65536 : 16384,
+        ...(level ? { thinking_config: { thinking_level: level, include_thoughts: true } } : {}),
+        ...(request.options?.json ? { response_mime_type: 'application/json' } : {}),
+    };
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body) });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Gemini [${res.status}]: ${err.error?.message ?? res.statusText}`);
+    }
+    const data = await res.json();
+    const cand = data.candidates?.[0];
+    // Diagnostic: see the output-budget split (thinking vs response).
+    const u = data.usageMetadata || {};
+    logger.info('[gemini] finish=%s prompt=%d thoughts=%d output=%d total=%d',
+        cand?.finishReason, u.promptTokenCount ?? 0, u.thoughtsTokenCount ?? 0,
+        u.candidatesTokenCount ?? 0, u.totalTokenCount ?? 0);
+    // A truncated response is invalid JSON downstream; surface a clear reason
+    // instead of letting the client fail with a cryptic parse error.
+    if (cand?.finishReason === 'MAX_TOKENS') {
+        throw new Error('The model spent its whole output budget reasoning and the answer was cut off. Nothing was kept from this attempt — rephrase or narrow the request and try again.');
     }
     const parts = cand?.content?.parts ?? [];
     return {
