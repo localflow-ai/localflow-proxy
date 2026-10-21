@@ -878,6 +878,26 @@ router.post('/common/genai', asyncHandler(async (req, res) => {
             return res.status(400).json({ error: `Unknown protocol: ${protocol}` });
         }
 
+        // Full-fidelity LLM exchange log — DEV ONLY, opt-in via LLM_LOG_CONVERSATIONS=1
+        // in .env (payloads are large and conversations are user data: never in prod).
+        // Each request carries the WHOLE conversation history, so one captured turn
+        // reconstructs the entire session — user messages, execution traces (message
+        // `context`), every generated formula, and the model's reply. JSONL per call.
+        if (process.env.LLM_LOG_CONVERSATIONS === '1') {
+            try {
+                const convLog = path.join(process.env.APP_LOG_DIR ?? './daquota-proxy-logs', 'llm-conversations.jsonl');
+                fs.appendFileSync(convLog, JSON.stringify({
+                    ts: new Date().toISOString(),
+                    model,
+                    system_chars: (request.system || '').length,
+                    messages: request.messages,
+                    response: llmResponse.text,
+                }) + '\n');
+            } catch (e) {
+                logger.warn('conversation log write failed: %s', e.message);
+            }
+        }
+
         pushEvent('genai', { ip: getClientIp(req), model, status: 200 });
         bumpDailyStat('genaiCalls');
         res.json(llmResponse);
