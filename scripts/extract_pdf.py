@@ -432,13 +432,13 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False, split_hints
     if not words:
         return ''
 
-    def _hinted_groups(row_sorted):
+    def _hinted_groups(row_sorted, hints):
         groups = _gap_groups(row_sorted)
-        if not split_hints:
+        if not hints:
             return groups
         tops = [w['top'] for w in row_sorted]
         row_y = sum(tops) / len(tops)
-        bounds = [bs for (y0, y1), bs in split_hints if y0 <= row_y <= y1]
+        bounds = [bs for (y0, y1), bs in hints if y0 <= row_y <= y1]
         if not bounds:
             return groups
         edges = [b[0] for bs in bounds for b in bs[1:]]
@@ -469,133 +469,192 @@ def _words_to_text(words, left_margin=None, derive_col_bounds=False, split_hints
                 cover = max(cover, w['x1'])
         return groups
 
-    # Derive column X-bounds from the row with the most gap-detected columns.
-    # This ensures rows with fewer words (e.g. only 2-3 columns populated) are
-    # still split at the same column boundaries as the header/densest row.
-    col_bounds = None
-    if derive_col_bounds:
-        row_groups = [_gap_groups(r) for r in rows]
-        # Size the grid from the densest row that is NOT justified prose — a
-        # justified paragraph would otherwise set one column per word. Fall back
-        # to every row if the whole region reads as prose.
-        candidates = [rg for rg in row_groups if not _is_grid_prose(rg)]
-        best_groups = max(candidates or row_groups, key=len, default=[])
-        if len(best_groups) >= 3:
-            col_bounds = []
-            for i, g in enumerate(best_groups):
-                gx0 = min(w['x0'] for w in g)
-                gx1 = max(w['x1'] for w in g)
-                left  = (max(w['x1'] for w in best_groups[i - 1]) + gx0) / 2 if i > 0 else 0
-                right = (gx1 + min(w['x0'] for w in best_groups[i + 1])) / 2 if i < len(best_groups) - 1 else 1e6
-                col_bounds.append((left, right))
-            # If the discarded rulings describe the data rows too — every dense-
-            # row group nests inside a single ruling column — adopt the ruling
-            # grid: it carries the true column set, including columns the data
-            # leaves empty, so centered multi-line headers map one-to-one
-            # instead of colliding into the narrower data-derived grid.
-            if split_hints:
-                cand = max((bs for _, bs in split_hints), key=len)
-                if len(cand) >= len(col_bounds):
-                    def _ruling_col(g):
-                        gx0 = min(w['x0'] for w in g)
-                        gx1 = max(w['x1'] for w in g)
-                        return next((i for i, (rx0, rx1) in enumerate(cand)
-                                     if rx0 - 1 <= gx0 and gx1 <= rx1 + 1), None)
-                    homes = [_ruling_col(g) for g in best_groups]
-                    nested = [h for h in homes if h is not None]
-                    fit = len(nested) / len(best_groups)
-                    # Nesting alone is not enough: a ruling column WIDER than two
-                    # data columns would fuse them (each nests, both share a home).
-                    # And the dense row alone is not enough either — EVERY row
-                    # must keep its groups in distinct ruling columns, or a page
-                    # whose rulings under-segment some rows ("ISIN | EUR" both
-                    # under one ruled column) would regress on adoption.
-                    def _mid_col(g):
-                        mid = (min(w['x0'] for w in g) + max(w['x1'] for w in g)) / 2
-                        return next((i for i, (rx0, rx1) in enumerate(cand) if rx0 <= mid <= rx1), None)
-                    def _row_injective(rg):
-                        mids = [_mid_col(g) for g in rg]
-                        seen = [m for m in mids if m is not None]
-                        return len(set(seen)) == len(seen)
-                    all_injective = all(_row_injective(rg) for rg in row_groups)
-                    if fit >= 0.8 and len(set(nested)) == len(nested) and all_injective:
-                        col_bounds = [(0 if i == 0 else cand[i][0],
-                                       1e6 if i == len(cand) - 1 else cand[i][1])
-                                      for i in range(len(cand))]
+    def _render(seg_rows, hints):
+        # Derive column X-bounds from the row with the most gap-detected columns.
+        # This ensures rows with fewer words (e.g. only 2-3 columns populated) are
+        # still split at the same column boundaries as the header/densest row.
+        col_bounds = None
+        if derive_col_bounds:
+            row_groups = [_gap_groups(r) for r in seg_rows]
+            # Size the grid from the densest row that is NOT justified prose — a
+            # justified paragraph would otherwise set one column per word. Fall back
+            # to every row if the whole region reads as prose.
+            candidates = [rg for rg in row_groups if not _is_grid_prose(rg)]
+            best_groups = max(candidates or row_groups, key=len, default=[])
+            if len(best_groups) >= 3:
+                col_bounds = []
+                for i, g in enumerate(best_groups):
+                    gx0 = min(w['x0'] for w in g)
+                    gx1 = max(w['x1'] for w in g)
+                    left  = (max(w['x1'] for w in best_groups[i - 1]) + gx0) / 2 if i > 0 else 0
+                    right = (gx1 + min(w['x0'] for w in best_groups[i + 1])) / 2 if i < len(best_groups) - 1 else 1e6
+                    col_bounds.append((left, right))
+                # If the discarded rulings describe the data rows too — every dense-
+                # row group nests inside a single ruling column — adopt the ruling
+                # grid: it carries the true column set, including columns the data
+                # leaves empty, so centered multi-line headers map one-to-one
+                # instead of colliding into the narrower data-derived grid.
+                if hints:
+                    cand = max((bs for _, bs in hints), key=len)
+                    if len(cand) >= len(col_bounds):
+                        def _ruling_col(g):
+                            gx0 = min(w['x0'] for w in g)
+                            gx1 = max(w['x1'] for w in g)
+                            return next((i for i, (rx0, rx1) in enumerate(cand)
+                                         if rx0 - 1 <= gx0 and gx1 <= rx1 + 1), None)
+                        homes = [_ruling_col(g) for g in best_groups]
+                        nested = [h for h in homes if h is not None]
+                        fit = len(nested) / len(best_groups)
+                        # Nesting alone is not enough: a ruling column WIDER than two
+                        # data columns would fuse them (each nests, both share a home).
+                        # And the dense row alone is not enough either — EVERY row
+                        # must keep its groups in distinct ruling columns, or a page
+                        # whose rulings under-segment some rows ("ISIN | EUR" both
+                        # under one ruled column) would regress on adoption.
+                        def _mid_col(g):
+                            mid = (min(w['x0'] for w in g) + max(w['x1'] for w in g)) / 2
+                            return next((i for i, (rx0, rx1) in enumerate(cand) if rx0 <= mid <= rx1), None)
+                        def _row_injective(rg):
+                            mids = [_mid_col(g) for g in rg]
+                            seen = [m for m in mids if m is not None]
+                            return len(set(seen)) == len(seen)
+                        all_injective = all(_row_injective(rg) for rg in row_groups)
+                        if fit >= 0.8 and len(set(nested)) == len(nested) and all_injective:
+                            col_bounds = [(0 if i == 0 else cand[i][0],
+                                           1e6 if i == len(cand) - 1 else cand[i][1])
+                                          for i in range(len(cand))]
 
-    lines = []
-    grid = []  # col_bounds path: rows of cells, each cell a list of word dicts
-    for row in rows:
-        row_sorted = sorted(row, key=lambda w: w['x0'])
-        row_text = ' '.join(w['text'] for w in row_sorted)
-        if _NOISE.search(row_text.strip()):
-            continue
+        lines = []
+        grid = []  # col_bounds path: rows of cells, each cell a list of word dicts
+        for row in seg_rows:
+            row_sorted = sorted(row, key=lambda w: w['x0'])
+            row_text = ' '.join(w['text'] for w in row_sorted)
+            if _NOISE.search(row_text.strip()):
+                continue
 
-        if col_bounds:
-            # Assign whole gap-groups — not individual words — to columns. A run of
-            # words with sub-column spacing (e.g. the space-separated groups of a
-            # number like "8 629 202,44") must land in a single cell even when the
-            # grid derived from data rows would slice through it: a wide total sits
-            # across two data-row columns, and per-word binning would split it.
-            cells = [[] for _ in col_bounds]
-            for g in _hinted_groups(row_sorted):
-                gx0 = min(w['x0'] for w in g)
-                gx1 = max(w['x1'] for w in g)
-                mid = (gx0 + gx1) / 2
-                assigned = None
-                for i, (cx0, cx1) in enumerate(col_bounds):
-                    if cx0 <= mid < cx1:
-                        assigned = i
-                        break
-                if assigned is None:
-                    assigned = min(range(len(col_bounds)),
-                                   key=lambda i: abs(mid - (col_bounds[i][0] + col_bounds[i][1]) / 2))
-                cells[assigned].extend(g)  # keep the words — the merge needs their y
-            if any(cells):
-                grid.append(cells)
-        else:
-            indent = row_sorted[0]['x0'] - left_margin
-            depth  = 0 if indent < 10 else (1 if indent < 60 else 2)
-            groups = _hinted_groups(row_sorted)
-            line = '  ' * depth + ' | '.join(
-                _sanitize_cell(' '.join(w['text'] for w in _read_order(g))) for g in groups)
+            if col_bounds:
+                # Assign whole gap-groups — not individual words — to columns. A run of
+                # words with sub-column spacing (e.g. the space-separated groups of a
+                # number like "8 629 202,44") must land in a single cell even when the
+                # grid derived from data rows would slice through it: a wide total sits
+                # across two data-row columns, and per-word binning would split it.
+                cells = [[] for _ in col_bounds]
+                for g in _hinted_groups(row_sorted, hints):
+                    gx0 = min(w['x0'] for w in g)
+                    gx1 = max(w['x1'] for w in g)
+                    mid = (gx0 + gx1) / 2
+                    assigned = None
+                    for i, (cx0, cx1) in enumerate(col_bounds):
+                        if cx0 <= mid < cx1:
+                            assigned = i
+                            break
+                    if assigned is None:
+                        assigned = min(range(len(col_bounds)),
+                                       key=lambda i: abs(mid - (col_bounds[i][0] + col_bounds[i][1]) / 2))
+                    cells[assigned].extend(g)  # keep the words — the merge needs their y
+                if any(cells):
+                    grid.append(cells)
+            else:
+                indent = row_sorted[0]['x0'] - left_margin
+                depth  = 0 if indent < 10 else (1 if indent < 60 else 2)
+                groups = _hinted_groups(row_sorted, hints)
+                line = '  ' * depth + ' | '.join(
+                    _sanitize_cell(' '.join(w['text'] for w in _read_order(g))) for g in groups)
+                if line.strip():
+                    lines.append(line)
+
+        # Pull wrapped-name fragments onto their value rows before stringifying,
+        # so no blank-name value rows are left for the LLM to puzzle over.
+        merged = _merge_adjacent_fragments(_merge_orphan_rows_up(_merge_orphan_rows_down(grid)))
+
+        # Indentation depths for the grid path. Statements often stack several data
+        # kinds in the first (label) column — categories, sub-categories, security
+        # names — distinguished visually by small x-offsets (~4pt). Cluster the
+        # leading x0 of first-column rows; with 2+ levels, render the depth as
+        # leading spaces (2 per level), the same convention as the non-grid path —
+        # the system prompt already teaches formulas to classify lines by it.
+        lead_x = []
+        for cells in merged:
+            first = next((ci for ci, c in enumerate(cells) if c), None)
+            lead_x.append(min(w['x0'] for w in cells[first]) if first == 0 else None)
+        xs = sorted(x for x in lead_x if x is not None)
+        levels = []
+        for x in xs:
+            if not levels or x - levels[-1][-1] > 2:
+                levels.append([x])
+            else:
+                levels[-1].append(x)
+        level_of = {}
+        if len(levels) >= 2:
+            for depth, cluster in enumerate(levels):
+                for x in cluster:
+                    level_of[x] = depth
+
+        for cells, lx in zip(merged, lead_x):
+            line = ' | '.join(_sanitize_cell(' '.join(w['text'] for w in _read_order(c))) for c in cells)
             if line.strip():
-                lines.append(line)
+                depth = level_of.get(lx, 0) if lx is not None else 0
+                lines.append('  ' * depth + line)
 
-    # Pull wrapped-name fragments onto their value rows before stringifying,
-    # so no blank-name value rows are left for the LLM to puzzle over.
-    merged = _merge_adjacent_fragments(_merge_orphan_rows_up(_merge_orphan_rows_down(grid)))
+        return lines
 
-    # Indentation depths for the grid path. Statements often stack several data
-    # kinds in the first (label) column — categories, sub-categories, security
-    # names — distinguished visually by small x-offsets (~4pt). Cluster the
-    # leading x0 of first-column rows; with 2+ levels, render the depth as
-    # leading spaces (2 per level), the same convention as the non-grid path —
-    # the system prompt already teaches formulas to classify lines by it.
-    lead_x = []
-    for cells in merged:
-        first = next((ci for ci, c in enumerate(cells) if c), None)
-        lead_x.append(min(w['x0'] for w in cells[first]) if first == 0 else None)
-    xs = sorted(x for x in lead_x if x is not None)
-    levels = []
-    for x in xs:
-        if not levels or x - levels[-1][-1] > 2:
-            levels.append([x])
-        else:
-            levels[-1].append(x)
-    level_of = {}
-    if len(levels) >= 2:
-        for depth, cluster in enumerate(levels):
-            for x in cluster:
-                level_of[x] = depth
+    # A page can stack several ruled sections with DIFFERENT column grids
+    # (e.g. a Cash table over an Equities table on a holdings statement). One
+    # page-wide grid then mis-bins every row of the other section — phantom
+    # empty columns, two values fused in one cell — so when the discarded
+    # rulings describe 2+ distinct grids, cut the page at each band's top and
+    # derive a column grid per segment. Single-band pages keep the one-grid
+    # behavior unchanged.
+    segments = [(rows, split_hints)]
+    if derive_col_bounds and split_hints and len(split_hints) >= 2:
+        bands = sorted(split_hints, key=lambda h: h[0][0])
 
-    for cells, lx in zip(merged, lead_x):
-        line = ' | '.join(_sanitize_cell(' '.join(w['text'] for w in _read_order(c))) for c in cells)
-        if line.strip():
-            depth = level_of.get(lx, 0) if lx is not None else 0
-            lines.append('  ' * depth + line)
+        # A band whose column edges are a subset of a neighbor's (±1pt) is the
+        # SAME grid — a ruled totals box with merged cells, not a new section.
+        # And bands that OVERLAP in Y (side-by-side tables, a box nested in a
+        # taller ruled region) cannot be stacked sections either. Group such
+        # bands together; only 2+ groups mean 2+ sections.
+        def _edges(bs):
+            return [bs[0][0]] + [b[1] for b in bs]
 
-    return '\n'.join(lines)
+        def _same_grid(a, b):
+            small, big = sorted((_edges(a), _edges(b)), key=len)
+            return all(any(abs(e - x) <= 1.0 for x in big) for e in small)
+
+        groups = [[bands[0]]]
+        gy1 = bands[0][0][1]  # current group's max y1
+        for band in bands[1:]:
+            rep = max((bs for _, bs in groups[-1]), key=len)
+            if band[0][0] < gy1 or _same_grid(band[1], rep):
+                groups[-1].append(band)
+                gy1 = max(gy1, band[0][1])
+            else:
+                groups.append([band])
+                gy1 = band[0][1]
+
+        if len(groups) >= 2:
+            # A section's floating furniture (title, column headers) sits ABOVE
+            # its ruled box, in the dead zone between two groups. Cut at the
+            # largest vertical jump in that zone — the section break — so the
+            # headers stay with the grid they label, not the section above.
+            row_tops = sorted(min(w['top'] for w in row) for row in rows)
+            cuts = []
+            for prev, nxt in zip(groups, groups[1:]):
+                py1 = max(y1 for (_y0, y1), _bs in prev)
+                ny0 = min(y0 for (y0, _y1), _bs in nxt)
+                seq = [py1] + [t for t in row_tops if py1 < t < ny0] + [ny0]
+                cuts.append(max(zip(seq, seq[1:]), key=lambda p: p[1] - p[0])[1])
+            parts = [[] for _ in groups]
+            for row in rows:
+                rtop = min(w['top'] for w in row)
+                parts[sum(1 for c in cuts if rtop >= c)].append(row)
+            segments = [(part, grp) for part, grp in zip(parts, groups)]
+
+    out = []
+    for seg_rows, hints in segments:
+        if seg_rows:
+            out.extend(_render(seg_rows, hints))
+    return '\n'.join(out)
 
 
 # ---------------------------------------------------------------------------
